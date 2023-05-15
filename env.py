@@ -264,7 +264,7 @@ class Env(object):
         self.action_scale = torch.tensor(action_scale, dtype=torch.float32, device=self.device)
 
     def process_actions(self, actions):
-        return actions*self.action_scale + self.action_offset
+        return actions[0]*self.action_scale + self.action_offset
 
     def reset(self):
         self.lifetime.zero_()
