@@ -4,6 +4,9 @@ import os
 from isaacgym import gymapi, gymtorch
 import torch
 
+from isaacgym import gymutil
+import torch.nn.functional as f
+
 from utils import heading_zup, axang2quat, rotatepoint, quatconj, quatmultiply, quatdiff_normalized
 
 def parse_kwarg(kwargs: dict, key: str, default_val: Any):
