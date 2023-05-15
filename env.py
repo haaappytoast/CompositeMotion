@@ -1626,6 +1626,26 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
         for i, l in zip(not_near, lines):
             e = self.envs[i]
             self.gym.add_lines(self.viewer, e, n_lines, l, [[0., 1., 0.] for _ in range(n_lines)])
+        # debugging visualize head, right_hand, left_hand
+        # self.visualize_ee_positions()
+
+    def visualize_ee_positions(self):
+        ee_links = [2, 5, 8]
+        sphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 0, 0))
+        ee_pos = self.link_pos[:, ee_links, :]
+
+        for i in range(len(self.envs)):
+            head_pos = ee_pos[i, 0]
+            rhand_pos = ee_pos[i, 1]
+            lhand_pos = ee_pos[i, 2]
+
+            head_pose = gymapi.Transform(gymapi.Vec3(head_pos[0], head_pos[1], head_pos[2]), r=None)
+            rhand_pose = gymapi.Transform(gymapi.Vec3(rhand_pos[0], rhand_pos[1], rhand_pos[2]), r=None)
+            lhand_pose = gymapi.Transform(gymapi.Vec3(lhand_pos[0], lhand_pos[1], lhand_pos[2]), r=None)
+
+            gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], head_pose)   
+            gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], rhand_pose)   
+            gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], lhand_pose)
             
     def reset_goal(self, env_ids):
         super().reset_goal(env_ids, self.goal_tensor[:, :3])
