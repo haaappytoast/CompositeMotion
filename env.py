@@ -221,14 +221,15 @@ class Env(object):
         self.gym.refresh_actor_root_state_tensor(self.sim)
         self.gym.refresh_rigid_body_state_tensor(self.sim)
         self.gym.refresh_net_contact_force_tensor(self.sim)
-
+    
+    # init에서 불러줌
     def create_tensors(self):
         root_tensor = self.gym.acquire_actor_root_state_tensor(self.sim)
         root_tensor = gymtorch.wrap_tensor(root_tensor)
         self.root_tensor = root_tensor.view(len(self.envs), -1, 13)
 
         num_links = self.gym.get_env_rigid_body_count(self.envs[0])
-        link_tensor = self.gym.acquire_rigid_body_state_tensor(self.sim)
+        link_tensor = self.gym.acquire_rigid_body_state_tensor(self.sim)    # (num_links * num_envs, 13)
         link_tensor = gymtorch.wrap_tensor(link_tensor)
         self.link_tensor = link_tensor.view(len(self.envs), num_links, -1)
 
@@ -547,7 +548,7 @@ class ICCGANHumanoid(Env):
     
     def step(self, actions):
         self.state_hist[:-1] = self.state_hist[1:].clone()
-        obs, rews, dones, info = super().step(actions)
+        obs, rews, dones, info = super().step(actions)              # apply_actions -> do_simulation -> refresh_tensor -> update_viewer -> reward -> observe
         info["disc_obs"] = self.observe_disc(self.state_hist)
         info["disc_obs_expert"], info["disc_seq_len"] = self.fetch_real_samples()
         return obs, rews, dones, info
@@ -577,13 +578,13 @@ class ICCGANHumanoid(Env):
         return self.ref_motion.state(motion_ids, motion_times)
     
     def create_tensors(self):
-        super().create_tensors()
+        super().create_tensors()        # root_tensor, link_tensor, joint_tensor, contact_force_tensor를 sim으로부터 acquire
         n_dofs = self.gym.get_actor_dof_count(self.envs[0], 0)
         n_links = self.gym.get_actor_rigid_body_count(self.envs[0], 0)
         self.root_pos, self.root_orient = self.root_tensor[:, 0, :3], self.root_tensor[:, 0, 3:7]
         self.root_lin_vel, self.root_ang_vel = self.root_tensor[:, 0, 7:10], self.root_tensor[:, 0, 10:13]
         self.char_root_tensor = self.root_tensor[:, 0]
-        if self.link_tensor.size(1) > n_links:
+        if self.link_tensor.size(1) > n_links:  
             self.link_pos, self.link_orient = self.link_tensor[:, :n_links, :3], self.link_tensor[:, :n_links, 3:7]
             self.link_lin_vel, self.link_ang_vel = self.link_tensor[:, :n_links, 7:10], self.link_tensor[:, :n_links, 10:13]
             self.char_link_tensor = self.link_tensor[:, :n_links]
@@ -634,6 +635,7 @@ class ICCGANHumanoid(Env):
     def _observe(self, env_ids):
         if env_ids is None:
             return observe_iccgan(
+                # 젤 이전 frame 제외한 나머지 frame들 모두!
                 self.state_hist[-self.ob_horizon:], self.ob_seq_lens
             )
         else:
@@ -679,8 +681,9 @@ class ICCGANHumanoid(Env):
 
 
 @torch.jit.script
+#! state_hist는 observe_function에서 구할 수 있음
 def observe_iccgan(state_hist: torch.Tensor, seq_len: torch.Tensor):
-    # state_hist: L x N x D
+    # state_hist: L x N x D (self.ob_horizon+1, len(self.envs), ob_disc_dim)
 
     UP_AXIS = 2
     n_hist = state_hist.size(0)
@@ -695,9 +698,9 @@ def observe_iccgan(state_hist: torch.Tensor, seq_len: torch.Tensor):
 
     origin = root_pos[-1].clone()
     origin[..., UP_AXIS] = 0                                            # N x 3
-    heading = heading_zup(root_orient[-1])
+    heading = heading_zup(root_orient[-1])                              # root_orient[-1] : N x 4 (마지막 frame) -> heading direction w.r.t. root
     up_dir = torch.zeros_like(origin)
-    up_dir[..., UP_AXIS] = 1
+    up_dir[..., UP_AXIS] = 1                                            # z-up
     heading_orient_inv = axang2quat(up_dir, -heading)                   # N x 4
 
     heading_orient_inv = (heading_orient_inv                            # L x N x n_links x 4
@@ -721,7 +724,7 @@ def observe_iccgan(state_hist: torch.Tensor, seq_len: torch.Tensor):
     mask1 = arange > (n_hist-1) - seq_len_
     mask2 = arange < seq_len_
     ob2[mask2] = ob1[mask1]
-    return ob2.flatten(start_dim=1)
+    return ob2.flatten(start_dim=1)                                     # ob2: update되는 ob1 값을 index 0~에서부터 계속 넣어줌 
 
 
 @torch.jit.script
@@ -742,7 +745,7 @@ def observe_disc(state_hist: torch.Tensor, seq_len: torch.Tensor, key_links: Opt
         link_pos, link_orient = link_tensor[:,:,key_links,:3], link_tensor[:,:,key_links,3:7]
 
     if parent_link is None:
-        origin = root_tensor[-1,:, :3].clone()               # N x 3
+        origin = root_tensor[-1,:, :3].clone()            # N x 3
         origin[..., UP_AXIS] = 0
         orient = root_tensor[-1,:,3:7]                    # N x 4
     else:
@@ -788,7 +791,7 @@ def observe_disc(state_hist: torch.Tensor, seq_len: torch.Tensor, key_links: Opt
 class ICCGANHumanoidTarget(ICCGANHumanoid):
 
     GOAL_REWARD_WEIGHT = 0.5
-    GOAL_DIM = 4
+    GOAL_DIM = 4                    # (x, y, sp, dist)
     GOAL_TENSOR_DIM = 3
     ENABLE_GOAL_TIMER = True
 
@@ -922,7 +925,7 @@ class ICCGANHumanoidTarget(ICCGANHumanoid):
         r[self.near] = 1
         
         if self.viewer is not None:
-           self.goal_timer[self.near] = self.goal_timer[self.near].clip(max=20)
+            self.goal_timer[self.near] = self.goal_timer[self.near].clip(max=20)
         
         return r.unsqueeze_(-1)
 
@@ -952,13 +955,13 @@ def observe_iccgan_target(state_hist: torch.Tensor, seq_len: torch.Tensor,
     heading_inv = -heading_zup(root_orient)
     c = torch.cos(heading_inv)
     s = torch.sin(heading_inv)
-    x, y = c*x-s*y, s*x+c*y
+    x, y = c*x-s*y, s*x+c*y         # [[c -s], [s c]] * [x y]^T (local_dp)
 
     dist = (x*x + y*y).sqrt_()
     sp = dist.mul(fps/timer)
 
     too_close = dist < 1e-5
-    x = torch.where(too_close, x, x/dist)
+    x = torch.where(too_close, x, x/dist)       # too_close를 만족하면 x, 아니면 x/dist 반환
     y = torch.where(too_close, y, y/dist)
     sp.clip_(max=sp_upper_bound)
     dist.div_(3).clip_(max=1.5)
@@ -1016,7 +1019,7 @@ class ICCGANHumanoidTargetAiming(ICCGANHumanoidTarget):
 
         target_dir = target_dir[not_near]
         target_dir.div_(dist)
-        link_pos = self.link_pos[not_near]
+        link_pos = self.link_pos[not_near]                                  # [num_envs, 15, 3]
 
         x_dir = self.x_dir[:target_dir.size(0)]
         q = quatdiff_normalized(x_dir, target_dir)
@@ -1057,7 +1060,7 @@ class ICCGANHumanoidTargetAiming(ICCGANHumanoidTarget):
         cy = torch.cos(azim) # z
         sy = torch.sin(azim)
 
-        w = cp*cy  # cr*cp*cy + sr*sp*sy
+        w = cp*cy  # cr*cp*cy + sr*sp*sy        # 원형좌표계인듯
         x = -sp*sy # sr*cp*cy - cr*sp*sy
         y = sp*cy  # cr*sp*cy + sr*cp*sy
         z = cp*sy  # cr*cp*sy - sr*sp*cy
@@ -1084,9 +1087,10 @@ class ICCGANHumanoidTargetAiming(ICCGANHumanoidTarget):
         dist = torch.linalg.norm(dp, ord=2, dim=-1, keepdim=True)
         
         target_dir = dp / dist
-        q0 = quatdiff_normalized(self.x_dir, target_dir)
+        q0 = quatdiff_normalized(self.x_dir, target_dir)        # (axis = [0, 0, -1])
+        
         q = torch.where(target_dir[:, :1] < -0.99999,
-            self.reverse_rotation, q0)
+            self.reverse_rotation, q0)                              # tar_dir이 (-1, 0) 즉 현재 바라보고 있는 방향과 180도 이상 차이나면 q = (0, 0, 1)
 
         aiming_dir = rotatepoint(quatmultiply(q, aiming_tensor), self.x_dir)
 
@@ -1097,6 +1101,7 @@ class ICCGANHumanoidTargetAiming(ICCGANHumanoidTarget):
         arm_len = torch.linalg.norm(fore_arm_dir, ord=2, dim=-1, keepdim=True)
         fore_arm_dir.div_(arm_len)
 
+        # global 기준
         target_hand_pos = fore_arm_pos + arm_len * aiming_dir
         e = torch.linalg.norm(target_hand_pos.sub_(hand_pos), ord=2, dim=-1).div_(arm_len.squeeze_(-1))
         aiming_rew = e.mul_(-2).exp_()
