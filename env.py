@@ -1646,44 +1646,14 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
             gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], head_pose)   
             gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], rhand_pose)   
             gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], lhand_pose)
-            
+
     def reset_goal(self, env_ids):
         super().reset_goal(env_ids, self.goal_tensor[:, :3])
-        self.reset_aiming_goal(env_ids)
-    
-    def reset_aiming_goal(self, env_ids):
-        n_envs = len(env_ids)
-        elev = torch.rand(n_envs, dtype=torch.float32, device=self.device).mul_(-np.pi/6)
-        azim = torch.rand(n_envs, dtype=torch.float32, device=self.device).mul_(np.pi/4)
-        if self.viewer is not None: azim.add_(0.3)
-
-        elev /= 2
-        azim /= 2
-        cp = torch.cos(elev) # y
-        sp = torch.sin(elev)
-        cy = torch.cos(azim) # z
-        sy = torch.sin(azim)
-
-        w = cp*cy  # cr*cp*cy + sr*sp*sy        # 원형좌표계인듯
-        x = -sp*sy # sr*cp*cy - cr*sp*sy
-        y = sp*cy  # cr*sp*cy + sr*cp*sy
-        z = cp*sy  # cr*cp*sy - sr*sp*cy
-        
-        if n_envs == len(self.envs):
-            self.goal_tensor[:, 3] = x
-            self.goal_tensor[:, 4] = y
-            self.goal_tensor[:, 5] = z 
-            self.goal_tensor[:, 6] = w
-        else:
-            self.goal_tensor[env_ids, 3] = x
-            self.goal_tensor[env_ids, 4] = y
-            self.goal_tensor[env_ids, 5] = z
-            self.goal_tensor[env_ids, 6] = w
 
     def reward(self):
         target_tensor = self.goal_tensor[:, :3]
-        aiming_tensor = self.goal_tensor[:, 3:]
-        
+        # aiming_tensor = self.goal_tensor[:, 3:]
+        aiming_tensor = torch.tensor([1,0,0,0], dtype=target_tensor.dtype, device=target_tensor.device)
         target_rew = super().reward(target_tensor)
 
         dp = target_tensor - self.root_pos
