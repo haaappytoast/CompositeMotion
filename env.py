@@ -1575,13 +1575,13 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
 
     def _observe(self, env_ids):
         if env_ids is None:
-            return observe_iccgan_target_aiming(
+            return observe_iccgan_target_ee(
                 self.state_hist[-self.ob_horizon:], self.ob_seq_lens,
                 self.goal_tensor, self.goal_timer,
                 sp_upper_bound=self.sp_upper_bound, goal_radius=self.goal_radius, fps=self.fps
             )
         else:
-            return observe_iccgan_target_aiming(
+            return observe_iccgan_target_ee(
                 self.state_hist[-self.ob_horizon:][:, env_ids], self.ob_seq_lens[env_ids],
                 self.goal_tensor[env_ids], self.goal_timer[env_ids],
                 sp_upper_bound=self.sp_upper_bound, goal_radius=self.goal_radius, fps=self.fps
