@@ -1704,37 +1704,49 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
 
     def reward(self):
         target_tensor = self.goal_tensor[:, :3]
-        # aiming_tensor = self.goal_tensor[:, 3:]
-        aiming_tensor = torch.tensor([1,0,0,0], dtype=target_tensor.dtype, device=target_tensor.device)
+        UP_AXIS = 2
+
+        # 1. Position
+        # target/current position of head, rhand, lhand 
+        target_ee_pos_tensor = self.goal_tensor[:, 3: 3 + 3*3]                                  # [N, L* 3]     -> local
+        current_ee_pos = self.link_pos[:, [self.head_link, self.rhand_link, self.lhand_link]]   # [N, L, 3]     -> global
+        
+        # 2. Orientation
+        # target/current orientation of head, rhand, lhand
+        target_ee_orient_tensor = self.goal_tensor[:, 12:]                                            # [N, L * 4]    -> local
+        current_ee_orient = self.link_orient[:, [self.head_link, self.rhand_link, self.lhand_link]]   # [N, L,  4]    -> global
+
+        # 3. change ego-centric to global: target_ee_pos & target_ee_orient to global
+        origin, root_orient = self.root_pos.clone(), self.root_orient.clone()
+        origin[..., UP_AXIS] = 0
+        heading = heading_zup(root_orient)                                                    # root_orient[-1] : N x 4 (마지막 frame) -> heading direction w.r.t. root
+        up_dir = torch.zeros_like(origin)
+        up_dir[..., UP_AXIS] = 1                                                              # z-up
+        heading_orient_inv = axang2quat(up_dir, -heading)                                     # [N, 4]    
+        heading_orient_inv = heading_orient_inv.view(-1).repeat(current_ee_pos.size(-2), 1)    # [L, N * 4]
+        heading_orient_inv = heading_orient_inv.reshape(current_ee_pos.size(-2), len(self.envs), 4)    # [L, N, 4]
+        heading_orient_inv = heading_orient_inv.permute(1, 0, 2)                              # [N, L, 4]
+
+        origin = origin.unsqueeze_(-2)                                                    # N x 1 x 3
+        current_ee_lpos = current_ee_pos - origin                                         # [N, L, 3]
+
+        current_ee_lpos = rotatepoint(heading_orient_inv, current_ee_lpos)                # [N, L, 3]
+        current_ee_lorient = quatmultiply(heading_orient_inv, current_ee_orient)          # [N, L, 4]
+
+        target_ee_pos_tensor = target_ee_pos_tensor.reshape(len(self.envs), -1, 3)
+        target_ee_orient_tensor = target_ee_orient_tensor.reshape(len(self.envs), -1, 4)
+
+        
+        # 4. difference b/w target <-> ee_pos
+        pos_diff = torch.linalg.norm(target_ee_pos_tensor.sub_(current_ee_lpos), ord=2, dim=-1)
+        pos_e = pos_diff.sum(-1, keepdim=True)
+        orient_diff = torch.linalg.norm(target_ee_orient_tensor.sub_(current_ee_lorient), ord=2, dim=-1)
+        orient_e = orient_diff.sum(-1, keepdim=True)
+
+        aiming_rew = pos_e.mul_(-2).exp_() + orient_e.mul_(-2).exp_()
+
+        # 5. reward w/ exponential
         target_rew = super().reward(target_tensor)
-
-        dp = target_tensor - self.root_pos
-        dp[..., self.UP_AXIS] = 0
-        dist = torch.linalg.norm(dp, ord=2, dim=-1, keepdim=True)
-        
-        target_dir = dp / dist
-        q0 = quatdiff_normalized(self.x_dir, target_dir)        # (axis = [0, 0, -1])
-        
-        q = torch.where(target_dir[:, :1] < -0.99999,
-            self.reverse_rotation, q0)                              # tar_dir이 (-1, 0) 즉 현재 바라보고 있는 방향과 180도 이상 차이나면 q = (0, 0, 1)
-
-        aiming_dir = rotatepoint(quatmultiply(q, aiming_tensor), self.x_dir)
-
-        hand_pos = self.link_pos[:, self.aiming_end_link]
-        fore_arm_pos = self.link_pos[:, self.aiming_start_link]
-
-        fore_arm_dir = hand_pos - fore_arm_pos
-        arm_len = torch.linalg.norm(fore_arm_dir, ord=2, dim=-1, keepdim=True)
-        fore_arm_dir.div_(arm_len)
-
-        # global 기준
-        target_hand_pos = fore_arm_pos + arm_len * aiming_dir
-        e = torch.linalg.norm(target_hand_pos.sub_(hand_pos), ord=2, dim=-1).div_(arm_len.squeeze_(-1))
-        aiming_rew = e.mul_(-2).exp_()
-         
-        rest_rew = fore_arm_dir[..., self.UP_AXIS].div(0.8).clip_(min=0, max=1)
-        
-        aiming_rew = torch.where(self.near, rest_rew, aiming_rew).unsqueeze_(-1)
 
         r = torch.cat((target_rew, aiming_rew), -1)
         return r
