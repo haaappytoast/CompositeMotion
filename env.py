@@ -349,6 +349,8 @@ class Env(object):
 
     def apply_actions(self, actions):
         actions = self.process_actions(actions)
+        actions = actions.repeat(len(self.envs))
+
         actions = gymtorch.unwrap_tensor(actions)
         if self.control_mode == "position":
             self.gym.set_dof_position_target_tensor(self.sim, actions)
