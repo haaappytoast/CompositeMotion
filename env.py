@@ -1593,46 +1593,9 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
 
     def update_viewer(self):
         super().update_viewer()
-
-        target_tensor = self.goal_tensor[:, :3]
-        aiming_tensor = self.goal_tensor[:, 3:]
-
-        target_dir = target_tensor - self.root_pos
-        target_dir[..., self.UP_AXIS] = 0
-        dist = torch.linalg.norm(target_dir, ord=2, dim=-1, keepdim=True)
-        not_near = (dist > self.goal_radius).squeeze_(-1)
-        dist = dist[not_near]
-
-        if dist.nelement() < 1: return
-
-        target_dir = target_dir[not_near]
-        target_dir.div_(dist)
-        link_pos = self.link_pos[not_near]                                  # [num_envs, 15, 3]
-
-        x_dir = self.x_dir[:target_dir.size(0)]
-        q = quatdiff_normalized(x_dir, target_dir)
-        # ensure 180 degree rotation is around the up axis
-        q = torch.where(target_dir[:, :1] < -0.99999,
-            self.reverse_rotation, q)
-
-        aiming_dir = rotatepoint(quatmultiply(q, aiming_tensor), x_dir)
-
-        start = link_pos[:, self.aiming_start_link]
-        end = start + aiming_dir
-
-        start = start.cpu().numpy()
-        end = end.cpu().numpy()
-        not_near = torch.nonzero(not_near).view(-1).cpu().numpy()
-        n_lines = 10
-        lines = np.stack([
-            np.stack((start[:,0], start[:,1], start[:,2]+0.005*i, end[:, 0], end[:, 1], end[:,2]+0.005*i), -1)
-        for i in range(-n_lines//2, n_lines//2)], -2)
-        for i, l in zip(not_near, lines):
-            e = self.envs[i]
-            self.gym.add_lines(self.viewer, e, n_lines, l, [[0., 1., 0.] for _ in range(n_lines)])
         # debugging visualize head, right_hand, left_hand
-        # self.visualize_ee_positions()
-
+        self.visualize_ee_positions()
+    
     def visualize_ee_positions(self):
         ee_links = [2, 5, 8]
         sphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 0, 0))
