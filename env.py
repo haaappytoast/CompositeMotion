@@ -729,7 +729,7 @@ def observe_iccgan(state_hist: torch.Tensor, seq_len: torch.Tensor):
     mask1 = arange > (n_hist-1) - seq_len_
     mask2 = arange < seq_len_
     ob2[mask2] = ob1[mask1]
-    return ob2.flatten(start_dim=1)                                     # ob2: update되는 ob1 값을 index 0~에서부터 계속 넣어줌 
+    return ob2.flatten(start_dim=1)                                     # ob2: update되는 ob1 값을 index 0~에서부터 계속 넣어줌 # [N, L * (n_links x 13)]
 
 
 @torch.jit.script
