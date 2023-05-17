@@ -98,13 +98,14 @@ def train(env, model, ckpt_dir, training_params):
     model.eval()
     env.reset()
     tic = time.time()
+    #! training start
     while not env.request_quit:
         with torch.no_grad():
             obs, info = env.reset_done()
             seq_len = info["ob_seq_lens"]
             reward_weights = info["reward_weights"]
             actions, values, log_probs = model.act(obs, seq_len-1, stochastic=True)
-            obs_, rews, dones, info = env.step(actions)
+            obs_, rews, dones, info = env.step(actions) # apply_actions -> do_simulation -> refresh_tensors -> observe()
             log_probs = log_probs.sum(-1, keepdim=True)
             not_done = (~dones).unsqueeze_(-1)
             terminate = info["terminate"]
@@ -132,7 +133,7 @@ def train(env, model, ckpt_dir, training_params):
             buffer_disc[name]["real"].append(reals[name])
             buffer_disc[name]["seq_len"].append(disc_seq_len[name])
 
-        if len(buffer["s"]) == HORIZON:
+        if len(buffer["s"]) == HORIZON: # 8로 지정
             with torch.no_grad():
                 disc_data_training = []
                 disc_data_raw = []
@@ -253,7 +254,7 @@ def train(env, model, ckpt_dir, training_params):
                     dtype=ob_seq_lens.dtype, device=ob_seq_lens.device)
                 mask = length.unsqueeze_(0) < ob_seq_lens.unsqueeze(1)
                 states_raw = model.observe(states, norm=False)[0]
-                model.actor_ob_normalizer.update(states_raw[mask])
+                model.ob_normalizer.update(states_raw[mask])
                 if model.value_normalizer is not None:
                     model.value_normalizer.update(returns)
                     returns = model.value_normalizer(returns)
