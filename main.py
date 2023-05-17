@@ -352,9 +352,6 @@ if __name__ == "__main__":
                 shutil.copy(settings.config, settings.ckpt)
                 with open(os.path.join(settings.ckpt, "command_{}.txt".format(time.time())), "w") as f:
                     f.write(" ".join(sys.argv))
-            else:   # pretrained 사용하면
-                if not os.path.isfile(settings.ckpt) or not os.path.exists(os.path.join(settings.ckpt, "ckpt")):
-                    raise ValueError("Checkpoint folder {} doesn't exists".format(settings.ckpt))
 
     if os.path.splitext(settings.config)[-1] in [".npy", ".json", ".yaml"]:
         config = object()
