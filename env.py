@@ -1647,10 +1647,38 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
             gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], rhand_pose)   
             gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], lhand_pose)
 
+    def _visualize_target_ee_positions(self):
+        ee_links = [2, 5, 8]
+        sphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 0, 0))
+        ee_pparent_pos = self.link_pos[:, [0, 3, 6], :]  # [N, L, 3]
+        ee_parent_pos = self.link_pos[:, [1, 4, 7], :]   # [N, L, 3]
+        ee_pos = self.link_pos[:, ee_links, :]           # [N, L, 3]
+
+        ee_link_len = torch.linalg.norm((ee_pos - ee_parent_pos), ord=2, dim=-1, keepdim=True) # [N, L, 1]
+        
+        ee_plink_len = torch.linalg.norm((ee_parent_pos - ee_pparent_pos), ord=2, dim=-1, keepdim=True)
+        link_dir =  (ee_parent_pos - ee_pparent_pos) / ee_plink_len
+
+        target_ee_pos = ee_parent_pos + ee_link_len * link_dir
+        
+        for i in range(len(self.envs)):
+            head_pos = target_ee_pos[i, 0]
+            rhand_pos = target_ee_pos[i, 1]
+            lhand_pos = target_ee_pos[i, 2]
+
+            head_pose = gymapi.Transform(gymapi.Vec3(head_pos[0], head_pos[1], head_pos[2]), r=None)
+            rhand_pose = gymapi.Transform(gymapi.Vec3(rhand_pos[0], rhand_pos[1], rhand_pos[2]), r=None)
+            lhand_pose = gymapi.Transform(gymapi.Vec3(lhand_pos[0], lhand_pos[1], lhand_pos[2]), r=None)
+
+            gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], head_pose)   
+            gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], rhand_pose)   
+            gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], lhand_pose)
+        pass
+
     def reset_goal(self, env_ids):
         super().reset_goal(env_ids, self.goal_tensor[:, :3])
-        self.reset_ee_goal(env_ids)
-        
+        self.reset_ee_goal(env_ids) #[3 ~ 11]: pos, [12 ~ 23]:orient
+
     def reset_ee_goal(self, env_ids, goal_tensor=None, goal_timer=None):
         n_envs = len(self.envs)
         UP_AXIS = 2
