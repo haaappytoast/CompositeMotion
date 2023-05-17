@@ -1562,6 +1562,10 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
 
     def create_tensors(self):
         super().create_tensors()
+        self.rhand_link = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actors[0], "right_hand")
+        self.lhand_link = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actors[0], "left_hand")
+        self.head_link = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actors[0], "head")
+
         self.hand_link = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actors[0], "right_hand")
         self.lower_arm_link = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actors[0], "right_lower_arm")
 
