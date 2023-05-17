@@ -22,9 +22,10 @@ parser.add_argument("--seed", type=int, default=42,
     help="Random seed.")
 parser.add_argument("--device", type=int, default=0,
     help="ID of the target GPU device for model running.")
+parser.add_argument("--pretrained", action="store_true", default=False,
+    help="use pretrained model of discriminator")
 settings = parser.parse_args()
 
-    
 os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
 os.environ['PYTHONHASHSEED'] = str(settings.seed)
 np.random.seed(settings.seed)
@@ -343,13 +344,17 @@ if __name__ == "__main__":
     else:
         num_envs = NUM_ENVS
         if settings.ckpt:
-            if os.path.isfile(settings.ckpt) or os.path.exists(os.path.join(settings.ckpt, "ckpt")):
-                raise ValueError("Checkpoint folder {} exists. Add `--test` option to run test with an existing checkpoint file".format(settings.ckpt))
-            import shutil, sys
-            os.makedirs(settings.ckpt, exist_ok=True)
-            shutil.copy(settings.config, settings.ckpt)
-            with open(os.path.join(settings.ckpt, "command_{}.txt".format(time.time())), "w") as f:
-                f.write(" ".join(sys.argv))
+            if not settings.pretrained: # pretrained model을 사용하지 않을 때에만
+                if os.path.isfile(settings.ckpt) or os.path.exists(os.path.join(settings.ckpt, "ckpt")):
+                    raise ValueError("Checkpoint folder {} exists. Add `--test` option to run test with an existing checkpoint file".format(settings.ckpt))
+                import shutil, sys
+                os.makedirs(settings.ckpt, exist_ok=True)
+                shutil.copy(settings.config, settings.ckpt)
+                with open(os.path.join(settings.ckpt, "command_{}.txt".format(time.time())), "w") as f:
+                    f.write(" ".join(sys.argv))
+            else:   # pretrained 사용하면
+                if not os.path.isfile(settings.ckpt) or not os.path.exists(os.path.join(settings.ckpt, "ckpt")):
+                    raise ValueError("Checkpoint folder {} doesn't exists".format(settings.ckpt))
 
     if os.path.splitext(settings.config)[-1] in [".npy", ".json", ".yaml"]:
         config = object()
@@ -412,5 +417,29 @@ if __name__ == "__main__":
                 model.load_state_dict(state_dict["model"])
         env.render()
         test(env, model)
-    else:
+    else:   # train 일 때
+        if settings.pretrained:     # pretrained model of discriminator을 사용한다면
+            if settings.ckpt is not None and os.path.exists(settings.ckpt):
+                if os.path.isdir(settings.ckpt):
+                    ckpt = os.path.join(settings.ckpt, "ckpt")  
+                else:
+                    ckpt = settings.ckpt
+                    settings.ckpt = os.path.dirname(ckpt)              
+                if os.path.exists(ckpt):
+                    print("Load PRETRAINED model from {}".format(ckpt))
+                    state_dict = torch.load(ckpt, map_location=torch.device(settings.device))   # pretrained model
+                    model_dict = model.state_dict()                                             # current model
+                    # 1. filter keys w.r.t. discriminators
+                    discriminator_key = []
+                    for k in model_dict.keys():
+                        if 'discriminators' in k: 
+                            discriminator_key.append(k)
+                    # 2. filter out unnecessary keys
+                    pretrained_dict = {k:v for k, v in state_dict["model"].items() if k in discriminator_key}
+                    # 3. overwrite entries in the existing state dict
+                    model_dict.update(pretrained_dict) 
+                    # 4. load the new state dict
+                    model.load_state_dict(model_dict)
+                    model_dict = model.state_dict()                                             # updated model
+
         train(env, model, settings.ckpt, training_params)
