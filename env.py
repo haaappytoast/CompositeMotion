@@ -1763,8 +1763,6 @@ def observe_iccgan_target_ee(state_hist: torch.Tensor, seq_len: torch.Tensor,
     UP_AXIS = 2
 
     target_tensor = goal_tensor[..., :3]
-    aiming_tensor = goal_tensor[..., 3:]
-
     target_ob = observe_iccgan_target(state_hist, seq_len, target_tensor, timer, sp_upper_bound=sp_upper_bound, fps=fps)
     
     root_pos = state_hist[-1, :, :3]
@@ -1789,17 +1787,7 @@ def observe_iccgan_target_ee(state_hist: torch.Tensor, seq_len: torch.Tensor,
     q = torch.where(target_dir[:, :1] < -0.99999,
         reverse, q)
 
-    aiming_dir = quatmultiply(q, aiming_tensor)
-    aiming_dir = quatmultiply(q, aiming_tensor)
-    aiming_dir = quatmultiply(orient_inv, aiming_dir)
-    aiming_dir = rotatepoint(aiming_dir, x_dir)
-
-    near = dist.squeeze_(-1) < goal_radius
-    # aiming_dir[near] = 0 # not supported by script
-    aiming_dir[near, 0] = 0
-    aiming_dir[near, 1] = 0
-    aiming_dir[near, 2] = 0
-    
+    aiming_dir = torch.torch.zeros_like(target_ob, dtype=target_ob.dtype, device=target_ob.device)
     return torch.cat((target_ob, aiming_dir), -1)
 
 
