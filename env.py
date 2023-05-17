@@ -1653,27 +1653,44 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
         if env_ids is None or len(env_ids) == n_envs:
             root_pos = self.root_pos
             root_orient = self.root_orient
-            ee_link_pos, ee_link_orient = self.link_pos[:, ee_link], self.link_orient[:, ee_link]
+            #! 바꿔야됌 -> goal 내가 지정한 direction으로! -> ee_position visualize 다시
+            ee_pparent_pos = self.link_pos[:, [0, 3, 6], :]  # [N, L, 3]
+            ee_parent_pos = self.link_pos[:, [1, 4, 7], :]   # [N, L, 3]
+            ee_pos, ee_orient = self.link_pos[:, ee_link], self.link_orient[:, ee_link]
+
         else:
             root_pos = self.root_pos[env_ids]
             root_orient = self.root_orient[env_ids]
-            ee_link_pos, ee_link_orient = self.link_pos[env_ids][ee_link], self.link_orient[env_ids][ee_link]   # [N, L, 3], [N, L, 4]
+            #! 바꿔야됌 -> goal 내가 지정한 direction으로! -> ee_position visualize 다시
+            ee_pparent_pos = self.link_pos[env_ids][[1, 4, 7]]                                        # [N, L, 3]
+            ee_parent_pos = self.link_pos[env_ids][[1, 4, 7]]                                         # [N, L, 3]
+            ee_pos, ee_orient = self.link_pos[env_ids][ee_link], self.link_orient[env_ids][ee_link]   # [N, L, 3], [N, L, 4]
+            
+        ee_link_len = torch.linalg.norm((ee_pos - ee_parent_pos), ord=2, dim=-1, keepdim=True) # [N, L, 1]
+        ee_plink_len = torch.linalg.norm((ee_parent_pos - ee_pparent_pos), ord=2, dim=-1, keepdim=True)
+        
+        link_dir =  (ee_parent_pos - ee_pparent_pos) / ee_plink_len
+        target_ee_pos = ee_parent_pos + ee_link_len * link_dir
+
+        # Quaternion
+        target_ee_orient = torch.zeros_like(ee_orient)
+        target_ee_orient[:, :, -1] = 1
 
         origin = root_pos.clone()
         origin[..., UP_AXIS] = 0
-        heading = heading_zup(root_orient)                                  # root_orient[-1] : N x 4 (마지막 frame) -> heading direction w.r.t. root
+        heading = heading_zup(root_orient)                                                    # root_orient[-1] : N x 4 (마지막 frame) -> heading direction w.r.t. root
         up_dir = torch.zeros_like(origin)
-        up_dir[..., UP_AXIS] = 1                                            # z-up
-        heading_orient_inv = axang2quat(up_dir, -heading)                   # [N, 4]    
-        heading_orient_inv = heading_orient_inv.view(-1).repeat(ee_link_pos.size(-1), 1)    # [L, N * 4]
-        heading_orient_inv = heading_orient_inv.reshape(ee_link_pos.size(-1), n_envs, 4)    # [L, N, 4]
-        heading_orient_inv = heading_orient_inv.permute(1, 0, 2)                            # [N, L, 4]
+        up_dir[..., UP_AXIS] = 1                                                              # z-up
+        heading_orient_inv = axang2quat(up_dir, -heading)                                     # [N, 4]    
+        heading_orient_inv = heading_orient_inv.view(-1).repeat(target_ee_pos.size(-1), 1)    # [L, N * 4]
+        heading_orient_inv = heading_orient_inv.reshape(target_ee_pos.size(-1), n_envs, 4)    # [L, N, 4]
+        heading_orient_inv = heading_orient_inv.permute(1, 0, 2)                              # [N, L, 4]
 
-        origin = origin.unsqueeze_(-2)                                         # N x 1 x 3
-        ob_link_pos = ee_link_pos - origin                                     # [N, L, 3]
+        origin = origin.unsqueeze_(-2)                                           # N x 1 x 3
+        ob_link_pos = target_ee_pos - origin                                     # [N, L, 3]
 
-        ob_link_pos = rotatepoint(heading_orient_inv, ob_link_pos)             # [N, L, 3]
-        ob_link_orient = quatmultiply(heading_orient_inv, ee_link_orient)      # [N, L, 4]
+        ob_link_pos = rotatepoint(heading_orient_inv, ob_link_pos)               # [N, L, 3]
+        ob_link_orient = quatmultiply(heading_orient_inv, target_ee_orient)      # [N, L, 4]
 
         if n_envs == len(self.envs):
             for i in range(len(ee_link)):
