@@ -156,7 +156,12 @@ def train(env, model, ckpt_dir, training_params):
                     ref = disc.ob_normalizer(real)                  # [N * HORIZON, 2/5, 56/49]
                     disc_data_training.append((name, disc, ref, ob, end_frame))     # len: 2
 
-            model.train()
+            #! discriminator training part
+            #! freeze parameters related to discriminators
+            for i, (name, param) in enumerate(model.named_parameters()):
+                if 'discriminators' in name:
+                    param.requires_grad = False
+            # model.train()
             n_samples = 0
             for name, disc, ref, ob, seq_end_frame_ in disc_data_training:
                 real_loss = real_losses[name]
