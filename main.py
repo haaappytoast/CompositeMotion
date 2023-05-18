@@ -181,6 +181,7 @@ def train(env, model, ckpt_dir, training_params):
                         alpha = torch.rand(r.size(0), dtype=r.dtype, device=r.device)
                         alpha = alpha.view(-1, *([1]*(r.ndim-1)))
                         interp = alpha*r+(1-alpha)*f
+                    #? should freeze? -> errors when i freezed it
                     interp.requires_grad = True
                     with torch.backends.cudnn.flags(enabled=False):
                         score_interp = disc(interp, seq_end_frame, normalize=False)
