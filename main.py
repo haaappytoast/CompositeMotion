@@ -91,9 +91,9 @@ def train(env, model, ckpt_dir, training_params):
         buffer["r"] = []
 
     buffer_disc = {
-        name: dict(fake=[], real=[], seq_len=[]) for name in env.discriminators.keys()
+        name: dict(fake=[], real=[], seq_len=[]) for name in env.discriminators.keys()  # Dict[str, DiscriminatorConfig]
     }
-    real_losses, fake_losses = {n:[] for n in buffer_disc.keys()}, {n:[] for n in buffer_disc.keys()}
+    real_losses, fake_losses = {n:[] for n in buffer_disc.keys()}, {n:[] for n in buffer_disc.keys()}   # names in discriminators of config files
     
     epoch = 0
     model.eval()
@@ -101,21 +101,21 @@ def train(env, model, ckpt_dir, training_params):
     tic = time.time()
     #! training start
     while not env.request_quit:
+        # data 수집
         with torch.no_grad():
             obs, info = env.reset_done()
             seq_len = info["ob_seq_lens"]
             reward_weights = info["reward_weights"]
-            actions, values, log_probs = model.act(obs, seq_len-1, stochastic=True)
-            obs_, rews, dones, info = env.step(actions) # apply_actions -> do_simulation -> refresh_tensors -> observe()
+            actions, values, log_probs = model.act(obs, seq_len-1, stochastic=True)     # Actor
+            obs_, rews, dones, info = env.step(actions)                                 # apply_actions -> do_simulation -> refresh_tensors -> observe()
             log_probs = log_probs.sum(-1, keepdim=True)
             not_done = (~dones).unsqueeze_(-1)
             terminate = info["terminate"]
-            
             fakes = info["disc_obs"]
             reals = info["disc_obs_expert"]
             disc_seq_len = info["disc_seq_len"]
 
-            values_ = model.evaluate(obs_, seq_len)
+            values_ = model.evaluate(obs_, seq_len)                 # Critic
 
         buffer["s"].append(obs)
         buffer["a"].append(actions)
@@ -128,7 +128,7 @@ def train(env, model, ckpt_dir, training_params):
         if has_goal_reward:
             buffer["r"].append(rews)
         if multi_critics:
-            buffer["reward_weights"].append(reward_weights)
+            buffer["reward_weights"].append(reward_weights)         # [N, # of rewards]
         for name, fake in fakes.items():
             buffer_disc[name]["fake"].append(fake)
             buffer_disc[name]["real"].append(reals[name])
@@ -138,23 +138,23 @@ def train(env, model, ckpt_dir, training_params):
             with torch.no_grad():
                 disc_data_training = []
                 disc_data_raw = []
-                for name, data in buffer_disc.items():
-                    disc = model.discriminators[name]
-                    fake = torch.cat(data["fake"])
-                    real = torch.cat(data["real"])
-                    seq_len = torch.cat(data["seq_len"])
+                for name, data in buffer_disc.items():              # data: fake, real, seq_len
+                    disc = model.discriminators[name]   
+                    fake = torch.cat(data["fake"])                  # [N * HORIZON, 2/5, 56/49] / len(data["fake"]) = HORIZON
+                    real = torch.cat(data["real"])                  # [N * HORIZON, 2/5, 56/49]
+                    seq_len = torch.cat(data["seq_len"])            # [N * HORIZON]
                     end_frame = seq_len - 1
                     disc_data_raw.append((name, disc, fake, end_frame))
 
                     length = torch.arange(fake.size(1), 
                         dtype=end_frame.dtype, device=end_frame.device)
                     mask = length.unsqueeze_(0) <= end_frame.unsqueeze(1)
-                    disc.ob_normalizer.update(fake[mask])
+                    disc.ob_normalizer.update(fake[mask])           # updates the mean, var, count from a batch of samples
                     disc.ob_normalizer.update(real[mask])
 
-                    ob = disc.ob_normalizer(fake)
-                    ref = disc.ob_normalizer(real)
-                    disc_data_training.append((name, disc, ref, ob, end_frame))
+                    ob = disc.ob_normalizer(fake)                   # [N * HORIZON, 2/5, 56/49]
+                    ref = disc.ob_normalizer(real)                  # [N * HORIZON, 2/5, 56/49]
+                    disc_data_training.append((name, disc, ref, ob, end_frame))     # len: 2
 
             model.train()
             n_samples = 0
@@ -162,9 +162,9 @@ def train(env, model, ckpt_dir, training_params):
                 real_loss = real_losses[name]
                 fake_loss = fake_losses[name]
                 opt = disc_optimizer[name]
-                if len(ref) != n_samples:
+                if len(ref) != n_samples:                   # [N * HORIZON]
                     n_samples = len(ref)
-                    idx = torch.randperm(n_samples)
+                    idx = torch.randperm(n_samples)         # 0 ~ n_samples 사이 난수 순열 생성
                 for batch in range(n_samples//BATCH_SIZE):
                     sample = idx[batch*BATCH_SIZE:(batch+1)*BATCH_SIZE]
                     r = ref[sample]
@@ -268,11 +268,11 @@ def train(env, model, ckpt_dir, training_params):
                     if rewards_task is not None:
                         rewards_task = rewards_task.mean(0).cpu().tolist()
 
-            n_samples = advantages.size(0)
+            n_samples = advantages.size(0)  # [N x HORIZON]
             epoch += 1
             model.train()
             policy_loss, value_loss = [], []
-            for _ in range(OPT_EPOCHS):
+            for _ in range(OPT_EPOCHS): # 5
                 idx = torch.randperm(n_samples)
                 for batch in range(n_samples // BATCH_SIZE):
                     sample = idx[BATCH_SIZE * batch: BATCH_SIZE *(batch+1)]
