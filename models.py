@@ -101,7 +101,7 @@ class Discriminator(torch.nn.Module):
                     gain = 1 if i == 2 else 2**0.5 
                     torch.nn.init.orthogonal_(p, gain=gain)
                     i += 1
-        self.ob_normalizer = RunningMeanStd(disc_dim)
+        self.ob_normalizer = RunningMeanStd(disc_dim)           # Tracks the mean, variance and count of values
         self.all_inst = torch.arange(0)
         
     def forward(self, s, seq_end_frame, normalize=True):
@@ -243,7 +243,7 @@ class ACModel(torch.nn.Module):
         if stochastic is None:
             stochastic = self.training
         s, g = self.observe(obs)
-        pi = self.actor(s, seq_end_frame, g)
+        pi = self.actor(s, seq_end_frame, g)    # Actor의 forward() 함수를 돎 -> torch.distributions.Normal(mu, sigma)
         if stochastic:
             a = pi.sample()
             lp = pi.log_prob(a)
