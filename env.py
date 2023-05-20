@@ -1664,15 +1664,15 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
             root_pos = self.root_pos[env_ids]
             root_orient = self.root_orient[env_ids]
             #! 바꿔야됌 -> goal 내가 지정한 direction으로! -> ee_position visualize 다시
-            ee_pparent_pos = self.link_pos[env_ids][[1, 4, 7]]                                        # [N, L, 3]
-            ee_parent_pos = self.link_pos[env_ids][[1, 4, 7]]                                         # [N, L, 3]
-            ee_pos, ee_orient = self.link_pos[env_ids][ee_link], self.link_orient[env_ids][ee_link]   # [N, L, 3], [N, L, 4]
-            
+            ee_pparent_pos = self.link_pos[env_ids][:, [0, 3, 6], :]                                        # [N, L, 3]
+            ee_parent_pos = self.link_pos[env_ids][:, [1, 4, 7], :]                                         # [N, L, 3]
+            ee_pos, ee_orient = self.link_pos[env_ids][:, ee_link, :], self.link_orient[env_ids][:, ee_link, :]   # [N, L, 3], [N, L, 4]
+
         ee_link_len = torch.linalg.norm((ee_pos - ee_parent_pos), ord=2, dim=-1, keepdim=True) # [N, L, 1]
         ee_plink_len = torch.linalg.norm((ee_parent_pos - ee_pparent_pos), ord=2, dim=-1, keepdim=True)
         
         link_dir =  (ee_parent_pos - ee_pparent_pos) / ee_plink_len
-        target_ee_pos = ee_parent_pos + ee_link_len * link_dir
+        target_ee_pos = ee_parent_pos + ee_link_len * link_dir                                #[N, L, 3]
 
         # Quaternion
         target_ee_orient = torch.zeros_like(ee_orient)
@@ -1685,23 +1685,21 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
         up_dir[..., UP_AXIS] = 1                                                              # z-up
         heading_orient_inv = axang2quat(up_dir, -heading)                                     # [N, 4]    
         heading_orient_inv = heading_orient_inv.view(-1).repeat(target_ee_pos.size(-1), 1)    # [L, N * 4]
-        heading_orient_inv = heading_orient_inv.reshape(target_ee_pos.size(-1), n_envs, 4)    # [L, N, 4]
+        heading_orient_inv = heading_orient_inv.reshape(target_ee_pos.size(-1), -1, 4)        # [L, N, 4]
         heading_orient_inv = heading_orient_inv.permute(1, 0, 2)                              # [N, L, 4]
+        origin = origin.unsqueeze_(-2)                                                        #  N x 1 x 3
+        ob_link_pos = target_ee_pos - origin                                                  # [N, L, 3]
+        ob_link_pos = rotatepoint(heading_orient_inv, ob_link_pos)                            # [N, L, 3]
+        ob_link_orient = quatmultiply(heading_orient_inv, target_ee_orient)                   # [N, L, 4]
 
-        origin = origin.unsqueeze_(-2)                                           # N x 1 x 3
-        ob_link_pos = target_ee_pos - origin                                     # [N, L, 3]
-
-        ob_link_pos = rotatepoint(heading_orient_inv, ob_link_pos)               # [N, L, 3]
-        ob_link_orient = quatmultiply(heading_orient_inv, target_ee_orient)      # [N, L, 4]
-
-        if n_envs == len(self.envs):
+        if env_ids is None or len(env_ids) == n_envs:
             for i in range(len(ee_link)):
                 self.goal_tensor[:, 3*(i+1) : 3*(i+1)+3] = ob_link_pos[:, i]      # [3,4,5]       [6,7,8]       [9,10,11]
                 self.goal_tensor[:, 4*(i+3) : 4*(i+3)+4] = ob_link_orient[:, i]   # [12,13,14,15] [16,17,18,19] [20,21,22,23]
         else:
             for i in range(len(ee_link)):
-                self.goal_tensor[env_ids][3*(i+1) : 3*(i+1)+3] = ob_link_pos[:, i]    # [3,4,5] [6,7,8] [9,10,11]
-                self.goal_tensor[env_ids][4*(i+3) : 4*(i+3)+4] = ob_link_orient[:, i]       # [12,13,14,15] [16,17,18,19] [20,21,22,23]
+                self.goal_tensor[env_ids][:, 3*(i+1) : 3*(i+1)+3] = ob_link_pos[:, i]          # [3,4,5]        [6,7,8]      [9,10,11]
+                self.goal_tensor[env_ids][:, 4*(i+3) : 4*(i+3)+4] = ob_link_orient[:, i]       # [12,13,14,15] [16,17,18,19] [20,21,22,23]
 
 
     def reward(self):
@@ -1726,7 +1724,7 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
         up_dir[..., UP_AXIS] = 1                                                              # z-up
         heading_orient_inv = axang2quat(up_dir, -heading)                                     # [N, 4]    
         heading_orient_inv = heading_orient_inv.view(-1).repeat(current_ee_pos.size(-2), 1)    # [L, N * 4]
-        heading_orient_inv = heading_orient_inv.reshape(current_ee_pos.size(-2), len(self.envs), 4)    # [L, N, 4]
+        heading_orient_inv = heading_orient_inv.reshape(current_ee_pos.size(-2), -1, 4)    # [L, N, 4]
         heading_orient_inv = heading_orient_inv.permute(1, 0, 2)                              # [N, L, 4]
 
         origin = origin.unsqueeze_(-2)                                                    # N x 1 x 3
