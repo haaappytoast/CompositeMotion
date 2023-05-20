@@ -1,9 +1,9 @@
 import numpy as np
 
-env_cls = "ICCGANHumanoidTargetAiming"
+env_cls = "ICCGANHumanoidTargetEE"
 env_params = dict(
     episode_length = 500,
-    motion_file = "assets/motions/clips_crouch.yaml",
+    motion_file = "assets/motions/clips_walk.yaml",
     goal_reward_weight = [0.25, 0.25],
 
     goal_radius = 0.5,
@@ -17,7 +17,7 @@ env_params = dict(
 )
 
 training_params = dict(
-    max_epochs = 100000,
+    max_epochs = 30000,
     save_interval = 10000,
     terminate_reward = -25
 )
@@ -25,17 +25,16 @@ training_params = dict(
 discriminators = {
     "aim/upper": dict(
         motion_file = "assets/motions/clips_aim.yaml",
-        key_links = ["torso", "head", "right_upper_arm", "right_lower_arm", "right_hand", "left_upper_arm", "left_lower_arm", "left_hand"],     # [1, 2, 3, 4, 5, 6, 7, 8]
+        key_links = ["torso", "head", "right_upper_arm", "right_lower_arm", "right_hand", "left_upper_arm", "left_lower_arm", "left_hand"],
         parent_link = "pelvis",
         local_pos = True,
         replay_speed = lambda n: np.random.uniform(0.8, 1.2, size=(n,)),
         ob_horizon = 2,
         weight=0.2
     ),
-    "crouch/lower": dict(
-        key_links = ["pelvis", "right_thigh", "right_shin", "right_foot", "left_thigh", "left_shin", "left_foot"],  # [0, 9, 10, 11, 12, 13, 14]
+    "walk/lower": dict(
+        key_links = ["pelvis", "right_thigh", "right_shin", "right_foot", "left_thigh", "left_shin", "left_foot"],
         parent_link = None,
         weight=0.3
     )
 }
-
