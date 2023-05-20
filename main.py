@@ -18,6 +18,8 @@ parser.add_argument("--ckpt", type=str, default=None,
     help="Checkpoint directory or file for training or evaluation.")
 parser.add_argument("--test", action="store_true", default=False,
     help="Run visual evaluation.")
+parser.add_argument('--headless', action='store_true',
+    help='Run headless without creating a viewer window')
 parser.add_argument("--seed", type=int, default=42,
     help="Random seed.")
 parser.add_argument("--device", type=int, default=0,
@@ -369,11 +371,15 @@ if __name__ == "__main__":
         config = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(config)
 
+    # if headless
+    if settings.headless:
+        config.env_params['graphics_device'] = -1
+    
     if hasattr(config, "training_params"):
         TRAINING_PARAMS.update(config.training_params)
     if not TRAINING_PARAMS["save_interval"]:
         TRAINING_PARAMS["save_interval"] = TRAINING_PARAMS["max_epochs"]
-    print(TRAINING_PARAMS)
+    print("TRAINING_PARAMS: ", TRAINING_PARAMS)
     training_params = namedtuple('x', TRAINING_PARAMS.keys())(*TRAINING_PARAMS.values())
     if hasattr(config, "discriminators"):
         discriminators = {
@@ -386,8 +392,7 @@ if __name__ == "__main__":
         env_cls = getattr(env, config.env_cls)
     else:
         env_cls = env.ICCGANHumanoid
-    print(env_cls, config.env_params)
-
+    print("env_cls: ", env_cls, config.env_params)
     env = env_cls(num_envs, FPS, FRAMESKIP,
         control_mode=CONTROL_MODE,
         discriminators=discriminators,
