@@ -85,7 +85,7 @@ def train(env, model, ckpt_dir, training_params):
         s=[], a=[], v=[], lp=[], v_=[], not_done=[], terminate=[],
         ob_seq_len=[]
     )
-    multi_critics = env.reward_weights is not None
+    multi_critics = env.reward_weights is not None       # n_comp = len(discriminators) + self.rew_dim
     if multi_critics:
         buffer["reward_weights"] = []
     has_goal_reward = env.rew_dim > 0
@@ -355,11 +355,11 @@ if __name__ == "__main__":
             if not settings.pretrained: # pretrained model을 사용하지 않을 때에만
                 if os.path.isfile(settings.ckpt) or os.path.exists(os.path.join(settings.ckpt, "ckpt")):
                     raise ValueError("Checkpoint folder {} exists. Add `--test` option to run test with an existing checkpoint file".format(settings.ckpt))
-                import shutil, sys
-                os.makedirs(settings.ckpt, exist_ok=True)
-                shutil.copy(settings.config, settings.ckpt)
-                with open(os.path.join(settings.ckpt, "command_{}.txt".format(time.time())), "w") as f:
-                    f.write(" ".join(sys.argv))
+            import shutil, sys
+            os.makedirs(settings.ckpt, exist_ok=True)
+            shutil.copy(settings.config, settings.ckpt)
+            with open(os.path.join(settings.ckpt, "command_{}.txt".format(time.time())), "w") as f:
+                f.write(" ".join(sys.argv))
 
     if os.path.splitext(settings.config)[-1] in [".npy", ".json", ".yaml"]:
         config = object()
