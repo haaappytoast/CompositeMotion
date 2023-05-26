@@ -24,8 +24,10 @@ parser.add_argument("--seed", type=int, default=42,
     help="Random seed.")
 parser.add_argument("--device", type=int, default=0,
     help="ID of the target GPU device for model running.")
-parser.add_argument("--pretrained", action="store_true", default=False,
-    help="use pretrained model of discriminator")
+parser.add_argument("--pretrained", type=str, default=None,
+    help="Use pretrained checkpoint of discriminator")
+parser.add_argument("--resume", type=str, default=None,
+    help="resume with existing checkpoint")
 settings = parser.parse_args()
 
 os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
@@ -352,7 +354,8 @@ if __name__ == "__main__":
     else:
         num_envs = NUM_ENVS
         if settings.ckpt:
-            if not settings.pretrained: # pretrained model을 사용하지 않을 때에만
+            # pretrained model을 사용하지 않을 때, ckpt가 이미 있는지 확인
+            if not settings.pretrained:
                 if os.path.isfile(settings.ckpt) or os.path.exists(os.path.join(settings.ckpt, "ckpt")):
                     raise ValueError("Checkpoint folder {} exists. Add `--test` option to run test with an existing checkpoint file".format(settings.ckpt))
             import shutil, sys
@@ -413,6 +416,9 @@ if __name__ == "__main__":
     model.discriminators = discriminators
 
     if settings.test:
+        if settings.pretrained or settings.retrain:
+            raise ValueError("This is test time. You can't use arguments of pretrained or retrain")
+
         if settings.ckpt is not None and os.path.exists(settings.ckpt):
             if os.path.isdir(settings.ckpt):
                 ckpt = os.path.join(settings.ckpt, "ckpt")
@@ -425,18 +431,35 @@ if __name__ == "__main__":
                 model.load_state_dict(state_dict["model"])
         env.render()
         test(env, model)
-    else:   # train 일 때
-        if settings.pretrained:     # pretrained model of discriminator을 사용한다면
-            if settings.ckpt is not None and os.path.exists(settings.ckpt):
-                if os.path.isdir(settings.ckpt):
-                    ckpt = os.path.join(settings.ckpt, "ckpt")  
+
+    # train 일 때
+    else:
+        # 저장할 ckpt 폴더가 있어야 한다
+        if settings.ckpt is not None and os.path.exists(settings.ckpt):
+            if os.path.isdir(settings.ckpt):
+                ckpt = os.path.join(settings.ckpt, "ckpt")  
+            else:
+                ckpt = settings.ckpt
+                settings.ckpt = os.path.dirname(ckpt)              
+            
+            # resume 시키려면 
+            if settings.resume:
+                if settings.resume is not None and os.path.isfile(settings.resume) and os.path.exists(settings.resume):
+                    resume_ckpt = settings.resume
+                    state_dict = torch.load(resume_ckpt, map_location=torch.device(settings.device))      # loaded model
+                    model_dict = model.state_dict()                                                        # current model
+                    model.load_state_dict(state_dict['model'])
+                    print("Resuming training with checkpoint: {}".format(resume_ckpt))
                 else:
-                    ckpt = settings.ckpt
-                    settings.ckpt = os.path.dirname(ckpt)              
-                if os.path.exists(ckpt):
-                    print("Load PRETRAINED model from {}".format(ckpt))
-                    state_dict = torch.load(ckpt, map_location=torch.device(settings.device))   # pretrained model
-                    model_dict = model.state_dict()                                             # current model
+                    raise ValueError("Please correctly type checkpoint path to resume training")
+
+            # pretrained model of discriminator 사용
+            if settings.pretrained:
+                pretrained_ckpt = settings.pretrained
+                if os.path.exists(pretrained_ckpt):
+                    print("Load PRETRAINED discriminator model from {}".format(pretrained_ckpt))
+                    state_dict = torch.load(pretrained_ckpt, map_location=torch.device(settings.device))   # pretrained model
+                    model_dict = model.state_dict()                                                        # current model
                     # 1. filter keys w.r.t. discriminators
                     discriminator_key = []
                     for k in model_dict.keys():
@@ -449,5 +472,10 @@ if __name__ == "__main__":
                     # 4. load the new state dict
                     model.load_state_dict(model_dict)
                     model_dict = model.state_dict()                                             # updated model
+                else:
+                    raise ValueError("Please correctly type checkpoint path to use pretrained model for training")
 
-        train(env, model, settings.ckpt, training_params)
+            train(env, model, settings.ckpt, training_params)
+        else:
+            raise ValueError("Please correctly type checkpoint directory path to save model")
+            
