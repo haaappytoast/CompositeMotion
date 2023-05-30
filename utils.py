@@ -16,7 +16,7 @@ def rotatepoint(q: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
 @torch.jit.script
 def heading_zup(q: torch.Tensor) -> torch.Tensor:
     ref_dir = torch.zeros_like(q[...,:3])
-    ref_dir[..., 0] = 1
+    ref_dir[..., 0] = 1                         # x-dir
     ref_dir = rotatepoint(q, ref_dir)
     return torch.atan2(ref_dir[...,1], ref_dir[...,0])
 

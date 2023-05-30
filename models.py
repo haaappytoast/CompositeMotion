@@ -225,12 +225,12 @@ class ACModel(torch.nn.Module):
             
     def observe(self, obs, norm=True):
         if self.goal_dim > 0:
-            s = obs[:, :-self.goal_dim]
-            g = obs[:, -self.goal_dim:]
+            s = obs[:, :-self.goal_dim]     # [N, n_obs - goal_dim]
+            g = obs[:, -self.goal_dim:]     # [N, goal_dim]
         else:
             s = obs
             g = None
-        s = s.view(*s.shape[:-1], -1, self.state_dim)
+        s = s.view(*s.shape[:-1], -1, self.state_dim)   # [512, -1, 195]
         return self.ob_normalizer(s) if norm else s, g
 
     def eval_(self, s, seq_end_frame, g, unnorm):
