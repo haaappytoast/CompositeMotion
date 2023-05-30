@@ -1561,7 +1561,7 @@ def observe_iccgan_juggling_target(state_hist: torch.Tensor, seq_len: torch.Tens
 class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
     
     GOAL_REWARD_WEIGHT = 0.25, 0.25
-    GOAL_DIM = 3 + (4 + 3) * 3
+    GOAL_DIM = 4 + (4 + 3) * 3              # (x, y, sp, dist) + (orient + pos) * (ee)
     GOAL_TENSOR_DIM = 3 + (4 + 3) * 3
 
     def create_tensors(self):
