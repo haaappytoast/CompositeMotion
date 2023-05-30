@@ -48,9 +48,9 @@ class Env(object):
     ):
         self.viewer = None
         assert(control_mode in ["position", "torque", "free"])
-        self.frameskip = frameskip
+        self.frameskip = frameskip      # 2
         self.fps = fps
-        self.step_time = 1./self.fps
+        self.step_time = 1./self.fps    # 30
         self.control_mode = control_mode
         self.episode_length = episode_length
         self.device = torch.device(compute_device)
@@ -92,7 +92,7 @@ class Env(object):
         self.info = dict(lifetime=self.lifetime)
 
         self.act_dim = self.action_scale.size(-1)
-        self.ob_dim = self.observe().size(-1)
+        self.ob_dim = self.observe().size(-1)               # return of observe_iccgan_*() function
         self.rew_dim = self.reward().size(-1)
 
         for i in range(self.gym.get_actor_count(self.envs[0])):
@@ -116,7 +116,7 @@ class Env(object):
     def setup_sim_params(self):
         sim_params = gymapi.SimParams()
         sim_params.use_gpu_pipeline = True # force to enable GPU
-        sim_params.dt = self.step_time/self.frameskip
+        sim_params.dt = self.step_time/self.frameskip   # 1/60
         sim_params.substeps = 2
         sim_params.up_axis = gymapi.UP_AXIS_Z if self.UP_AXIS == 2 else gymapi.UP_AXIS_Y
         sim_params.gravity = gymapi.Vec3(*self.vector_up(-9.81))
@@ -348,8 +348,9 @@ class Env(object):
         return self.obs, rewards, self.done, self.info
 
     def apply_actions(self, actions):
-        actions = self.process_actions(actions)
-        actions = actions.repeat(len(self.envs))
+        actions = self.process_actions(actions) # [1, 28]
+        if not (len(self.envs) == actions.shape[0]):
+            actions = actions.repeat(len(self.envs))
 
         actions = gymtorch.unwrap_tensor(actions)
         if self.control_mode == "position":
@@ -687,6 +688,7 @@ class ICCGANHumanoid(Env):
 
 @torch.jit.script
 #! state_hist는 observe_function에서 구할 수 있음
+# ob_link_pos, ob_link_orient, ob_link, lin_vel, ob_link_ang_vel
 def observe_iccgan(state_hist: torch.Tensor, seq_len: torch.Tensor):
     # state_hist: L x N x D (self.ob_horizon+1, len(self.envs), ob_disc_dim)
 
@@ -728,7 +730,7 @@ def observe_iccgan(state_hist: torch.Tensor, seq_len: torch.Tensor):
     seq_len_ = seq_len.unsqueeze(1)
     mask1 = arange > (n_hist-1) - seq_len_
     mask2 = arange < seq_len_
-    ob2[mask2] = ob1[mask1]
+    ob2[mask2] = ob1[mask1]                                             # [N, horizon, 195]
     return ob2.flatten(start_dim=1)                                     # ob2: update되는 ob1 값을 index 0~에서부터 계속 넣어줌 # [N, L * (n_links x 13)]
 
 
@@ -957,13 +959,13 @@ def observe_iccgan_target(state_hist: torch.Tensor, seq_len: torch.Tensor,
     dp = target_tensor - root_pos
     x = dp[:, 0]
     y = dp[:, 1]
-    heading_inv = -heading_zup(root_orient)
+    heading_inv = -heading_zup(root_orient)         # root_orientation의 x-dir의 각도 (inverse)
     c = torch.cos(heading_inv)
     s = torch.sin(heading_inv)
-    x, y = c*x-s*y, s*x+c*y         # [[c -s], [s c]] * [x y]^T (local_dp)
+    x, y = c*x-s*y, s*x+c*y                         # [[c -s], [s c]] * [x y]^T (local_dp -> root_orient에서 바라본 dp)
 
     dist = (x*x + y*y).sqrt_()
-    sp = dist.mul(fps/timer)
+    sp = dist.mul(fps/timer)                        #! 정확히 왜 하는지 모르겠음
 
     too_close = dist < 1e-5
     x = torch.where(too_close, x, x/dist)       # too_close를 만족하면 x, 아니면 x/dist 반환
