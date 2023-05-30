@@ -213,23 +213,26 @@ def train(env, model, ckpt_dir, training_params):
                 terminate = torch.cat(buffer["terminate"])
                 if multi_critics:
                     reward_weights = torch.cat(buffer["reward_weights"])
-                    rewards = torch.zeros_like(reward_weights)
+                    rewards = torch.zeros_like(reward_weights)                      # [num_envs X 8, reward 개수]
                 else:
                     reward_weights = None
                     rewards = None
                 for name, disc, ob, seq_end_frame in disc_data_raw:
+                    # ob: [num_envs X 8, 2, 56]
+                    # name: aim/upper or walk/lower
+                    # seq_end_frame = [1, 1, ... , 8, 8] (n_envs X 8)
                     r = (disc(ob, seq_end_frame).clamp_(-1, 1)
-                            .mean(-1, keepdim=True))
+                            .mean(-1, keepdim=True))                                # clamp shape: [num_envs X 8, 32: ensemble]   / r.shape: [num_envs X 8, 1]
                     if rewards is None:
                         rewards = r
                     else:
-                        rewards[:, env.discriminators[name].id] = r.squeeze_(-1)
+                        rewards[:, env.discriminators[name].id] = r.squeeze_(-1)    # id: 0 / 1
                 if has_goal_reward:
-                    rewards_task = torch.cat(buffer["r"])
+                    rewards_task = torch.cat(buffer["r"])                           # [num_envs X 8, 2] / buffer["r"]: [8, 512, 2]
                     if rewards is None:
                         rewards = rewards_task
                     else:
-                        rewards[:, -rewards_task.size(-1):] = rewards_task
+                        rewards[:, -rewards_task.size(-1):] = rewards_task          # 마지막 reward 들 (개수만큼)
                 else:
                     rewards_task = None
                 rewards[terminate] = training_params.terminate_reward
@@ -274,7 +277,7 @@ def train(env, model, ckpt_dir, training_params):
                     # for logger only
                     rewards = rewards.view(*reward_weights.shape)
                     reward_tot = (rewards * reward_weights).sum(-1, keepdims=True).mean(0).item()
-                    rewards = rewards.mean(0).cpu().tolist()
+                    rewards = rewards.mean(0).cpu().tolist()                                        # [num_envs X 8, num_reward] -> [1, num_reward]
                     if rewards_task is not None:
                         rewards_task = rewards_task.mean(0).cpu().tolist()
 
@@ -416,8 +419,8 @@ if __name__ == "__main__":
     model.discriminators = discriminators
 
     if settings.test:
-        if settings.pretrained or settings.retrain:
-            raise ValueError("This is test time. You can't use arguments of pretrained or retrain")
+        if settings.pretrained is not None or settings.resume is not None:
+            raise ValueError("This is test time. You can't use arguments of pretrained or resume")
 
         if settings.ckpt is not None and os.path.exists(settings.ckpt):
             if os.path.isdir(settings.ckpt):
