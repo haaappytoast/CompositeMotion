@@ -111,7 +111,8 @@ def train(env, model, ckpt_dir, training_params):
             seq_len = info["ob_seq_lens"]
             reward_weights = info["reward_weights"]
             actions, values, log_probs = model.act(obs, seq_len-1, stochastic=True)     # Actor
-            obs_, rews, dones, info = env.step(actions)                                 # apply_actions -> do_simulation -> refresh_tensors -> observe()
+            # 여기서의 rews: goal reward                       
+            obs_, rews, dones, info = env.step(actions)  # apply_actions -> do_simulation -> refresh_tensors -> observe()
             log_probs = log_probs.sum(-1, keepdim=True)
             not_done = (~dones).unsqueeze_(-1)
             terminate = info["terminate"]
@@ -120,8 +121,7 @@ def train(env, model, ckpt_dir, training_params):
             disc_seq_len = info["disc_seq_len"]
 
             values_ = model.evaluate(obs_, seq_len)                 # Critic
-
-        buffer["s"].append(obs)
+        buffer["s"].append(obs)                                     # [HORIZON, NUM_ENVS, state_dim]
         buffer["a"].append(actions)
         buffer["v"].append(values)
         buffer["lp"].append(log_probs)
@@ -210,10 +210,10 @@ def train(env, model, ckpt_dir, training_params):
 
             model.eval()
             with torch.no_grad():
-                terminate = torch.cat(buffer["terminate"])
+                terminate = torch.cat(buffer["terminate"])                          # [HORIZON X num_envs]
                 if multi_critics:
-                    reward_weights = torch.cat(buffer["reward_weights"])
-                    rewards = torch.zeros_like(reward_weights)                      # [num_envs X 8, reward 개수]
+                    reward_weights = torch.cat(buffer["reward_weights"])            # [HORIZON, num_envs, reward] -> [num_envs X HORIZON, reward 개수]
+                    rewards = torch.zeros_like(reward_weights)                      # [num_envs X HORIZON, reward 개수]
                 else:
                     reward_weights = None
                     rewards = None
