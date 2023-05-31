@@ -59,16 +59,82 @@ TRAINING_PARAMS = dict(
     save_interval = None,
     terminate_reward = -1
 )
+def logger(obs, rews, info):
+    buffer = dict(r=[])
+    buffer_disc = {
+    name: dict(fake=[], seq_len=[]) for name in env.discriminators.keys()  # Dict[str, DiscriminatorConfig]
+    }
+
+    has_goal_reward = env.rew_dim > 0
+    if has_goal_reward:
+        buffer["r"].append(rews)
+    
+    multi_critics = env.reward_weights is not None
+    if multi_critics:
+        rewards = torch.zeros(1, len(env.discriminators)+env.rew_dim)                      # [num_envs X 8, reward 개수]
+    else:
+        rewards = torch.zeros(1, len(env.discriminators))
+    
+    fakes = info["disc_obs"]
+    disc_seq_len = info["disc_seq_len"]
+
+    for name, fake in fakes.items():
+        buffer_disc[name]["fake"].append(fake)
+        buffer_disc[name]["seq_len"].append(disc_seq_len[name])
+
+    with torch.no_grad():
+        # 1. Reward related to discriminators
+        disc_data_raw = []
+        for name, data in buffer_disc.items():              # data: fake, real, seq_len
+            disc = model.discriminators[name]   
+            fake = torch.cat(data["fake"])                  # [N * HORIZON, 2/5, 56/49] / len(data["fake"]) = HORIZON
+            seq_len = torch.cat(data["seq_len"])            # [N * HORIZON]
+            end_frame = seq_len - 1
+            disc_data_raw.append((name, disc, fake, end_frame))
+        
+        for name, disc, ob, seq_end_frame in disc_data_raw:
+            r = (disc(ob, seq_end_frame).clamp_(-1, 1).mean(-1, keepdim=True)) # clamp shape: [num_envs X 8, 32: ensemble]   / r.shape: [num_envs X 8, 1]
+            if rewards is None:
+                rewards = r
+            else:
+                rewards[:, env.discriminators[name].id] = r.squeeze_(-1)    # id: 0 / 1
+
+        # 2. Reward related to goal      
+        if has_goal_reward:
+            rewards_task = torch.cat(buffer["r"])                           # [num_envs X 8, 2] / buffer["r"]: [8, 512, 2]
+            if rewards is None:
+                rewards = rewards_task
+            else:
+                rewards[:, -rewards_task.size(-1):] = rewards_task          # 마지막 reward 들 (개수만큼)
+        
+        else:
+            rewards_task = None
+
+        rewards = rewards.mean(0).cpu().tolist()                                        # [num_reward]
+        print("Reward: {}".format("/".join(list(map("{:.4f}".format, rewards)))))
+    return rewards
 
 def test(env, model):
     model.eval()
     env.reset()
+    rewards_tot = 0
+    count = 0
     while not env.request_quit:
         obs, info = env.reset_done()
         seq_len = info["ob_seq_lens"]
         actions = model.act(obs, seq_len-1)
-        env.step(actions)
+        obs, rews, _, info = env.step(actions)                                 # apply_actions -> do_simulation -> refresh_tensors -> observe()
 
+        reward = logger(obs, rews, info)
+        
+        if info["terminate"].item() is False:
+            rewards_tot += reward[0]
+            count +=1
+        else:
+            rewards_tot += reward[0]
+            print("\n------\nLength: {:d}, avg episode reward: {:.4f}\n-----".format(count, rewards_tot/count))
+            rewards_tot = 0
+            count = 0
 
 def train(env, model, ckpt_dir, training_params):
     if ckpt_dir is not None:
