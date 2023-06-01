@@ -115,3 +115,18 @@ def slerp(q0, q1, frac):
     q = torch.where(s < 0.001, 0.5*q0+0.5*q1, q)
     q = torch.where(c >= 1, q0, q)
     return q
+
+
+@torch.jit.script
+def quat_conjugate(x):
+    """
+    quaternion with its imaginary part negated
+    """
+    return torch.cat([-x[..., :3], x[..., 3:]], dim=-1)
+
+@torch.jit.script
+def quat_inverse(x):
+    """
+    The inverse of the rotation
+    """
+    return quat_conjugate(x)
