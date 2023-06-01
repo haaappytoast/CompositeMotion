@@ -7,7 +7,7 @@ import torch
 from isaacgym import gymutil
 import torch.nn.functional as f
 
-from utils import heading_zup, axang2quat, rotatepoint, quatconj, quatmultiply, quatdiff_normalized
+from utils import heading_zup, axang2quat, rotatepoint, quatconj, quatmultiply, quatdiff_normalized, quat_inverse, quat2axang
 
 def parse_kwarg(kwargs: dict, key: str, default_val: Any):
     return kwargs[key] if key in kwargs else default_val
@@ -1678,8 +1678,7 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
 
         # Quaternion
         target_ee_orient = torch.zeros_like(ee_orient)
-        target_ee_orient[:, :, -1] = 1
-
+        target_ee_orient[..., -1] = 1
         origin = root_pos.clone()
         origin[..., UP_AXIS] = 0
         heading = heading_zup(root_orient)                                                    # root_orient[-1] : N x 4 (마지막 frame) -> heading direction w.r.t. root
@@ -1718,16 +1717,16 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
         target_ee_orient_tensor = self.goal_tensor[:, 12:]                                            # [N, L * 4]    -> local
         current_ee_orient = self.link_orient[:, [self.head_link, self.rhand_link, self.lhand_link]]   # [N, L,  4]    -> global
 
-        # 3. change ego-centric to global: target_ee_pos & target_ee_orient to global
+        # 3. current_ee_pos & current_ee_orient: global -> egocentric
         origin, root_orient = self.root_pos.clone(), self.root_orient.clone()
         origin[..., UP_AXIS] = 0
         heading = heading_zup(root_orient)                                                    # root_orient[-1] : N x 4 (마지막 frame) -> heading direction w.r.t. root
         up_dir = torch.zeros_like(origin)
-        up_dir[..., UP_AXIS] = 1                                                              # z-up
-        heading_orient_inv = axang2quat(up_dir, -heading)                                     # [N, 4]    
+        up_dir[..., UP_AXIS] = 1                                                               # z-up
+        heading_orient_inv = axang2quat(up_dir, -heading)                                      # [N, 4]    
         heading_orient_inv = heading_orient_inv.view(-1).repeat(current_ee_pos.size(-2), 1)    # [L, N * 4]
-        heading_orient_inv = heading_orient_inv.reshape(current_ee_pos.size(-2), -1, 4)    # [L, N, 4]
-        heading_orient_inv = heading_orient_inv.permute(1, 0, 2)                              # [N, L, 4]
+        heading_orient_inv = heading_orient_inv.reshape(current_ee_pos.size(-2), -1, 4)        # [L, N, 4]
+        heading_orient_inv = heading_orient_inv.permute(1, 0, 2)                               # [N, L, 4]
 
         origin = origin.unsqueeze_(-2)                                                    # N x 1 x 3
         current_ee_lpos = current_ee_pos - origin                                         # [N, L, 3]
@@ -1737,15 +1736,22 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
 
         target_ee_pos_tensor = target_ee_pos_tensor.reshape(len(self.envs), -1, 3)
         target_ee_orient_tensor = target_ee_orient_tensor.reshape(len(self.envs), -1, 4)
-
         
         # 4. difference b/w target <-> ee_pos
+        # pos diff
         pos_diff = torch.linalg.norm(target_ee_pos_tensor.sub_(current_ee_lpos), ord=2, dim=-1)
         pos_e = pos_diff.sum(-1, keepdim=True)
-        orient_diff = torch.linalg.norm(target_ee_orient_tensor.sub_(current_ee_lorient), ord=2, dim=-1)
-        orient_e = orient_diff.sum(-1, keepdim=True)
+        
+        # orient diff
+        inv_target_ee_orient = quat_inverse(target_ee_orient_tensor)
+        orient_diff = quatmultiply(inv_target_ee_orient, current_ee_lorient)              # [N, 3, 4]
+        _, angle_diff = quat2axang(orient_diff)                                           # [N, 3]
 
-        aiming_rew = pos_e.mul_(-2).exp_() + orient_e.mul_(-2).exp_()
+
+        sum_angle_diff = (angle_diff**2).sum(dim=-1, keepdim=True)
+        sum_angle_diff.div_(3)
+
+        aiming_rew = pos_e.mul_(-2).exp_() + sum_angle_diff.mul_(-2).exp_()
 
         # 5. reward w/ exponential
         target_rew = super().reward(target_tensor)
