@@ -343,7 +343,7 @@ class Env(object):
         else:
             self.done = terminate
         self.info["terminate"] = terminate
-        self.obs = self.observe()
+        self.obs = self.observe()       # ICCGANHumanoid의 observe에서: state_hist[-1] update -> _observe()로 observe_iccgan()
         self.request_quit = False if self.viewer is None else self.gym.query_viewer_has_closed(self.viewer)
         return self.obs, rewards, self.done, self.info
 
@@ -554,7 +554,8 @@ class ICCGANHumanoid(Env):
     
     def step(self, actions):
         self.state_hist[:-1] = self.state_hist[1:].clone()
-        obs, rews, dones, info = super().step(actions)              # apply_actions -> do_simulation -> refresh_tensor -> update_viewer -> reward -> observe
+        # apply_actions -> do_simulation -> refresh_tensor -> update_viewer -> reward -> observe
+        obs, rews, dones, info = super().step(actions)
         info["disc_obs"] = self.observe_disc(self.state_hist)
         info["disc_obs_expert"], info["disc_seq_len"] = self.fetch_real_samples()
         return obs, rews, dones, info
@@ -623,6 +624,7 @@ class ICCGANHumanoid(Env):
             self.goal_tensor = None
         self.goal_timer = torch.zeros((len(self.envs), ), dtype=torch.int32, device=self.device) if self.enable_goal_timer else None
 
+    # 
     def observe(self, env_ids=None):
         self.ob_seq_lens = self.lifetime+1 #(self.lifetime+1).clip(max=self.state_hist.size(0)-1)
         n_envs = len(self.envs)
@@ -903,25 +905,26 @@ class ICCGANHumanoidTarget(ICCGANHumanoid):
             goal_tensor[env_ids,0] = self.root_pos[env_ids,0] + dx
             goal_tensor[env_ids,1] = self.root_pos[env_ids,1] + dy
 
+    # 순서: step function에서 (action -> reward -> observe)
     def reward(self, goal_tensor=None, goal_timer=None):
         if goal_tensor is None: goal_tensor = self.goal_tensor
         if goal_timer is None: goal_timer = self.goal_timer
 
-        p = self.root_pos
-        p_ = self.state_hist[-1][:, :3]
+        p = self.root_pos                                       # 현재 root_pos
+        p_ = self.state_hist[-1][:, :3]                         # 이전 root_pos (goal_tensor 구했을 때의 root_pos부터 시작!  / action apply 되기 이전)
 
-        dp_ = goal_tensor - p_
+        dp_ = goal_tensor - p_                                  # root_pos에서 target 지점까지의 (dx, dy)
         dp_[:, self.UP_AXIS] = 0
         dist_ = torch.linalg.norm(dp_, ord=2, dim=-1)
-        v_ = dp_.div_(goal_timer.unsqueeze(-1)*self.step_time)
+        v_ = dp_.div_(goal_timer.unsqueeze(-1)*self.step_time)  # desired veloicty (total distance / sec)
 
         v_mag = torch.linalg.norm(v_, ord=2, dim=-1)
-        sp_ = (dist_/self.step_time).clip_(max=v_mag.clip(min=self.sp_lower_bound, max=self.sp_upper_bound))
-        v_ *= (sp_/v_mag).unsqueeze_(-1)
+        sp_ = (dist_/self.step_time).clip_(max=v_mag.clip(min=self.sp_lower_bound, max=self.sp_upper_bound))    # step_time 동안 갈수있는 p_
+        v_ *= (sp_/v_mag).unsqueeze_(-1)                       # desired velocity
 
-        dp = p - p_
+        dp = p - p_                                            # (현재 root - 이전 root)
         dp[:, self.UP_AXIS] = 0
-        v = dp / self.step_time
+        v = dp / self.step_time                                # current velocity: dp / duration 
         r = (v - v_).square_().sum(1).mul_(-3/(sp_*sp_)).exp_()
 
         dp = goal_tensor - p
@@ -1654,6 +1657,7 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
 
     def reset_ee_goal(self, env_ids, goal_tensor=None, goal_timer=None):
         n_envs = len(self.envs)
+
         UP_AXIS = 2
         ee_link = [2, 5, 8]
         if env_ids is None or len(env_ids) == n_envs:
@@ -1753,7 +1757,7 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
         sum_angle_diff = (angle_diff**2).sum(dim=-1, keepdim=True)
         sum_angle_diff.div_(3)
 
-        aiming_rew = pos_e.mul_(-2).exp_() + sum_angle_diff.mul_(-2).exp_()
+        aiming_rew = 0.5 * pos_e.mul_(-2).exp_() + 0.5 * sum_angle_diff.mul_(-2).exp_()
 
         # 5. reward w/ exponential
         target_rew = super().reward(target_tensor)
