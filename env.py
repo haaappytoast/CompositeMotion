@@ -1599,7 +1599,7 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
         super().update_viewer()
         # debugging visualize head, right_hand, left_hand
         self.visualize_ee_positions()
-    
+        self._visualize_target_ee_positions()
     def visualize_ee_positions(self):
         ee_links = [2, 5, 8]
         sphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 0, 0))
@@ -1620,7 +1620,9 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
 
     def _visualize_target_ee_positions(self):
         ee_links = [2, 5, 8]
-        sphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 0, 0))
+        hsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(0, 1, 1))
+        rsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(0, 1, 0))
+        lsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(0, 0, 1))
         ee_pparent_pos = self.link_pos[:, [0, 3, 6], :]  # [N, L, 3]
         ee_parent_pos = self.link_pos[:, [1, 4, 7], :]   # [N, L, 3]
         ee_pos = self.link_pos[:, ee_links, :]           # [N, L, 3]
@@ -1641,9 +1643,9 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
             rhand_pose = gymapi.Transform(gymapi.Vec3(rhand_pos[0], rhand_pos[1], rhand_pos[2]), r=None)
             lhand_pose = gymapi.Transform(gymapi.Vec3(lhand_pos[0], lhand_pos[1], lhand_pos[2]), r=None)
 
-            gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], head_pose)   
-            gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], rhand_pose)   
-            gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], lhand_pose)
+            gymutil.draw_lines(hsphere_geom, self.gym, self.viewer, self.envs[i], head_pose)   
+            gymutil.draw_lines(rsphere_geom, self.gym, self.viewer, self.envs[i], rhand_pose)   
+            gymutil.draw_lines(lsphere_geom, self.gym, self.viewer, self.envs[i], lhand_pose)
         pass
 
     def reset_goal(self, env_ids):
