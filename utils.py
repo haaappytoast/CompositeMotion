@@ -1,5 +1,6 @@
 from typing import Tuple
 import torch
+import torch.nn.functional as F
 
 
 @torch.jit.script
@@ -130,3 +131,40 @@ def quat_inverse(x):
     The inverse of the rotation
     """
     return quat_conjugate(x)
+
+@torch.jit.script
+def quat_rotate(q, v):
+    shape = q.shape
+    q_w = q[:, -1]
+    q_vec = q[:, :3]
+    a = v * (2.0 * q_w ** 2 - 1.0).unsqueeze(-1)
+    b = torch.cross(q_vec, v, dim=-1) * q_w.unsqueeze(-1) * 2.0
+    c = q_vec * \
+        torch.bmm(q_vec.view(shape[0], 1, 3), v.view(
+            shape[0], 3, 1)).squeeze(-1) * 2.0
+    return a + b + c
+
+@torch.jit.script
+def quat_to_tan_norm(q):
+    # type: (Tensor) -> Tensor
+    # represents a rotation using the tangent and normal vectors
+    ref_tan = torch.zeros_like(q[..., 0:3])
+    ref_tan[..., 0] = 1                         # x-dir
+    tan = quat_rotate(q, ref_tan)
+    
+    ref_norm = torch.zeros_like(q[..., 0:3])
+    ref_norm[..., -1] = 1                       # z-dir
+    norm = quat_rotate(q, ref_norm)
+    
+    norm_tan = torch.cat([tan, norm], dim=len(tan.shape) - 1)
+    return norm_tan
+
+@torch.jit.script
+def tan_norm_to_rotmat(norm_tan):
+    # type: (Tensor) -> Tensor
+    tan = F.normalize(norm_tan[..., 0:3])
+    norm = F.normalize(norm_tan[..., 3:6])
+    binorm = F.normalize(torch.cross(norm_tan[..., 3:6], norm_tan[..., 0:3], dim= -1), dim=-1)
+    
+    rot_mat = torch.cat([tan, binorm, norm], dim = len(tan.shape)-1)
+    return rot_mat
