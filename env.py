@@ -101,6 +101,10 @@ class Env(object):
             dof = self.gym.get_actor_dof_dict(self.envs[0], i)
             print(dof, len(dof))
 
+        # get_link_len
+        rarm_len, larm_len = self.get_link_len([2,3,4], [3,4,5]), self.get_link_len([2,6,7], [6,7,8])
+        self.rarm_len, self.larm_len = rarm_len.sum(dim=0), larm_len.sum(dim=0)
+
     def __del__(self):
         if hasattr(self, "viewer") and self.viewer is not None:
             self.gym.destroy_viewer(self.viewer)
@@ -697,8 +701,8 @@ class ICCGANHumanoid(Env):
         start = gpos.cpu().numpy()                                                      # [5,n_links,3]
         scale = 0.13
         x_end = (gpos.cpu() + tan * scale).cpu().numpy()
-        y_end = (gpos.cpu() + binorm * scale).cpu().numpy()
-        z_end = (gpos.cpu() + norm * scale).cpu().numpy()
+        z_end = (gpos.cpu() + binorm * scale).cpu().numpy()
+        y_end = (gpos.cpu() + norm * scale).cpu().numpy()
         
         n_lines = 5
 
@@ -726,7 +730,11 @@ class ICCGANHumanoid(Env):
             for e, l in zip(self.envs, z_lines):
                 self.gym.add_lines(self.viewer, e, n_lines, l, [[0., 0., 1.] for _ in range(n_lines)])
         pass
-
+    
+    def get_link_len(self, p_idx, c_idx):
+        p_pos, c_pos = self.link_pos[0, p_idx, :], self.link_pos[0, c_idx, :] # [n_links, 3]
+        link_len = torch.linalg.norm((p_pos - c_pos), ord=2, dim=-1, keepdim=True)  # [n_links, 1]
+        return link_len 
 
 @torch.jit.script
 #! state_hist는 observe_function에서 구할 수 있음
@@ -1642,7 +1650,9 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
         super().update_viewer()
         # debugging visualize head, right_hand, left_hand
         self.visualize_ee_positions()
-        self._visualize_target_ee_positions()
+        # self._visualize_target_ee_positions()
+        # self.visualize_target_ee_tpos()
+        
     def visualize_ee_positions(self):
         ee_links = [2, 5, 8]
         sphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 0, 0))
@@ -1690,6 +1700,31 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
             gymutil.draw_lines(rsphere_geom, self.gym, self.viewer, self.envs[i], rhand_pose)   
             gymutil.draw_lines(lsphere_geom, self.gym, self.viewer, self.envs[i], lhand_pose)
         pass
+
+    def visualize_target_ee_tpos(self):
+        # get global pos of head
+        head_gpos = self.link_pos[:, [2], :].squeeze_(1).cpu()                                   # [n_envs, 3] 
+        # get z-axis of head
+        head_tan_norm = utils.quat_to_tan_norm(self.link_orient[:, [2], :].squeeze_(1)).cpu()    # z-axis of head link
+        # head_norm = torch.nn.functional.normalize(head_tan_norm[..., 3:6])
+        rot_mat = utils.tan_norm_to_rotmat(head_tan_norm).cpu()
+        head_binorm = torch.nn.functional.normalize(rot_mat[..., 3:6])       # y-axis [num_envs x n_links, 3]
+
+        rarm_offset, larm_offset = self.rarm_len.item(), self.larm_len.item()
+
+        target_rhand_pos = head_gpos + rarm_offset * (-head_binorm)               # [n_envs, 3]
+        target_lhand_pos = head_gpos + larm_offset * head_binorm
+        for i in range(len(self.envs)):
+            rsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 1, 0.5))   # yellow
+            lsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 0.5, 1))   # pink
+            
+            rhand_pos = target_rhand_pos[i]
+            rhand_pose = gymapi.Transform(gymapi.Vec3(rhand_pos[0], rhand_pos[1], rhand_pos[2]), r=None)
+            lhand_pos = target_lhand_pos[i]
+            lhand_pose = gymapi.Transform(gymapi.Vec3(lhand_pos[0], lhand_pos[1], lhand_pos[2]), r=None)
+
+            gymutil.draw_lines(rsphere_geom, self.gym, self.viewer, self.envs[i], rhand_pose)   
+            gymutil.draw_lines(lsphere_geom, self.gym, self.viewer, self.envs[i], lhand_pose)   
 
     def reset_goal(self, env_ids):
         super().reset_goal(env_ids, self.goal_tensor[:, :3])
