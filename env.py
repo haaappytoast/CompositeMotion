@@ -1650,8 +1650,8 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
         super().update_viewer()
         # debugging visualize head, right_hand, left_hand
         self.visualize_ee_positions()
-        self._visualize_target_ee_positions()
-        # # self.visualize_target_ee_tpos()
+        # self._visualize_target_ee_positions()
+        self.visualize_target_ee_tpos()
         
     def visualize_ee_positions(self):
         ee_links = [2, 5, 8]
