@@ -1714,15 +1714,21 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
 
         target_rhand_pos = head_gpos + rarm_offset * (-head_binorm)               # [n_envs, 3]
         target_lhand_pos = head_gpos + larm_offset * head_binorm
+        target_head_pos = head_gpos
+
         for i in range(len(self.envs)):
+            hsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(0.5, 1, 1))   # pink
             rsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 1, 0.5))   # yellow
             lsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 0.5, 1))   # pink
             
+            head_pos = target_head_pos[i]
+            head_pose = gymapi.Transform(gymapi.Vec3(head_pos[0], head_pos[1], head_pos[2]), r=None)
             rhand_pos = target_rhand_pos[i]
             rhand_pose = gymapi.Transform(gymapi.Vec3(rhand_pos[0], rhand_pos[1], rhand_pos[2]), r=None)
             lhand_pos = target_lhand_pos[i]
             lhand_pose = gymapi.Transform(gymapi.Vec3(lhand_pos[0], lhand_pos[1], lhand_pos[2]), r=None)
 
+            gymutil.draw_lines(hsphere_geom, self.gym, self.viewer, self.envs[i], head_pose)   
             gymutil.draw_lines(rsphere_geom, self.gym, self.viewer, self.envs[i], rhand_pose)   
             gymutil.draw_lines(lsphere_geom, self.gym, self.viewer, self.envs[i], lhand_pose)   
 
@@ -1803,7 +1809,7 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
 
         # 1. Position
         # target/current position of head, rhand, lhand 
-        target_ee_pos_tensor = self.goal_tensor[:, 3: 3 + 3*3]                                  # [N, L* 3]     -> local
+        target_ee_pos_tensor = self.goal_tensor[:, 3: 3 + 3*3].clone()              # [N, L* 3]     -> local
         current_ee_pos = self.link_pos[:, [self.head_link, self.rhand_link, self.lhand_link]].view(target_ee_pos_tensor.size(0), -1)   # [N, L, 3]     -> global
         
         # # 2. Orientation
@@ -1833,12 +1839,12 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
         
         # 4. difference b/w target <-> ee_pos
         # pos diff
-        pos_diff = torch.linalg.norm(target_ee_pos_tensor.sub_(current_ee_pos), ord=2, dim=-1)  # [N]
+        pos_diff = torch.linalg.norm(target_ee_pos_tensor.sub(current_ee_pos), ord=2, dim=-1)  # [N]
         # pos_e = pos_diff.sum(-1, keepdim=True)
         # # orient diff
         # inv_target_ee_orient = utils.quat_inverse(target_ee_orient_tensor)
         # orient_diff = quatmultiply(inv_target_ee_orient, current_ee_lorient)              # [N, 3, 4]
-        # _, angle_diff = utils.quat2axang(orient_diff)                                           # [N, 3]
+        # _, angle_diff = utils.quat2axang(orient_diff)                                     # [N, 3]
 
 
         # sum_angle_diff = (angle_diff**2).sum(dim=-1, keepdim=True)

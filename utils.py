@@ -102,7 +102,7 @@ def slerp(q0, q1, frac):
 
     c = c.abs_()
     s = torch.sqrt(1.0 - c*c)
-    t = torch.acos(c);
+    t = torch.acos(c)
 
     c1 = torch.sin((1-frac)*t) / s
     c2 = torch.sin(frac*t) / s
