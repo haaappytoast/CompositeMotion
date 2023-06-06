@@ -1785,9 +1785,9 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
         up_dir = torch.zeros_like(origin)
         up_dir[..., UP_AXIS] = 1                                                              # z-up
         heading_orient_inv = axang2quat(up_dir, -heading)                                     # [N, 4]    
-        # heading_orient_inv = heading_orient_inv.view(-1).repeat(target_ee_pos.size(-1), 1)    # [L, N * 4]
-        # heading_orient_inv = heading_orient_inv.reshape(target_ee_pos.size(-1), -1, 4)        # [L, N, 4]
-        # heading_orient_inv = heading_orient_inv.permute(1, 0, 2)                              # [N, L, 4]
+        heading_orient_inv = heading_orient_inv.view(-1).repeat(target_tensor.size(-1), 1)    # [L, N * 4]
+        heading_orient_inv = heading_orient_inv.reshape(target_tensor.size(-1), -1, 4)        # [L, N, 4]
+        heading_orient_inv = heading_orient_inv.permute(1, 0, 2)                              # [N, L, 4]
         origin = origin.unsqueeze_(-2)                                                        #  N x 1 x 3
         ob_link_pos = target_tensor - origin                                                  # [N, L, 3]
         ob_link_pos = rotatepoint(heading_orient_inv, ob_link_pos)                            # [N, L, 3]
@@ -1824,9 +1824,9 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
         up_dir = torch.zeros_like(origin)
         up_dir[..., UP_AXIS] = 1                                                               # z-up
         heading_orient_inv = axang2quat(up_dir, -heading)                                      # [N, 4]    
-        # heading_orient_inv = heading_orient_inv.view(-1).repeat(current_ee_pos.size(-2), 1)    # [L, N * 4]
-        # heading_orient_inv = heading_orient_inv.reshape(current_ee_pos.size(-2), -1, 4)        # [L, N, 4]
-        # heading_orient_inv = heading_orient_inv.permute(1, 0, 2)                               # [N, L, 4]
+        heading_orient_inv = heading_orient_inv.view(-1).repeat(current_ee_pos.size(-2), 1)    # [L, N * 4]
+        heading_orient_inv = heading_orient_inv.reshape(current_ee_pos.size(-2), -1, 4)        # [L, N, 4]
+        heading_orient_inv = heading_orient_inv.permute(1, 0, 2)                               # [N, L, 4]
 
         origin = origin.unsqueeze_(-2)                                                    # N x 1 x 3
         current_ee_lpos = current_ee_pos - origin                                         # [N, L, 3]
