@@ -1717,7 +1717,7 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
         target_head_pos = head_gpos
 
         for i in range(len(self.envs)):
-            hsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(0.5, 1, 1))   # pink
+            hsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 1, 1))   # pink
             rsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 1, 0.5))   # yellow
             lsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 0.5, 1))   # pink
             
@@ -1742,16 +1742,16 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
         UP_AXIS = 2
         ee_link = [2, 5, 8]
         if env_ids is None or len(env_ids) == n_envs:
-            # root_pos = self.root_pos
-            # root_orient = self.root_orient
+            root_pos = self.root_pos
+            root_orient = self.root_orient
             # #! 바꿔야됌 -> goal 내가 지정한 direction으로! -> ee_position visualize 다시
             # ee_pparent_pos = self.link_pos[:, [0, 3, 6], :]  # [N, L, 3]
             # ee_parent_pos = self.link_pos[:, [1, 4, 7], :]   # [N, L, 3]
             ee_pos, ee_orient = self.link_pos[:, ee_link], self.link_orient[:, ee_link]
 
         else:
-            # root_pos = self.root_pos[env_ids]
-            # root_orient = self.root_orient[env_ids]
+            root_pos = self.root_pos[env_ids]
+            root_orient = self.root_orient[env_ids]
             # #! 바꿔야됌 -> goal 내가 지정한 direction으로! -> ee_position visualize 다시
             # ee_pparent_pos = self.link_pos[env_ids][:, [0, 3, 6], :]                                        # [N, L, 3]
             # ee_parent_pos = self.link_pos[env_ids][:, [1, 4, 7], :]                                         # [N, L, 3]
@@ -1779,27 +1779,27 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
         # # Quaternion
         # target_ee_orient = torch.zeros_like(ee_orient)
         # target_ee_orient[..., -1] = 1
-        # origin = root_pos.clone()
-        # origin[..., UP_AXIS] = 0
-        # heading = heading_zup(root_orient)                                                    # root_orient[-1] : N x 4 (마지막 frame) -> heading direction w.r.t. root
-        # up_dir = torch.zeros_like(origin)
-        # up_dir[..., UP_AXIS] = 1                                                              # z-up
-        # heading_orient_inv = axang2quat(up_dir, -heading)                                     # [N, 4]    
+        origin = root_pos.clone()
+        origin[..., UP_AXIS] = 0
+        heading = heading_zup(root_orient)                                                    # root_orient[-1] : N x 4 (마지막 frame) -> heading direction w.r.t. root
+        up_dir = torch.zeros_like(origin)
+        up_dir[..., UP_AXIS] = 1                                                              # z-up
+        heading_orient_inv = axang2quat(up_dir, -heading)                                     # [N, 4]    
         # heading_orient_inv = heading_orient_inv.view(-1).repeat(target_ee_pos.size(-1), 1)    # [L, N * 4]
         # heading_orient_inv = heading_orient_inv.reshape(target_ee_pos.size(-1), -1, 4)        # [L, N, 4]
         # heading_orient_inv = heading_orient_inv.permute(1, 0, 2)                              # [N, L, 4]
-        # origin = origin.unsqueeze_(-2)                                                        #  N x 1 x 3
-        # ob_link_pos = target_ee_pos - origin                                                  # [N, L, 3]
-        # ob_link_pos = rotatepoint(heading_orient_inv, ob_link_pos)                            # [N, L, 3]
+        origin = origin.unsqueeze_(-2)                                                        #  N x 1 x 3
+        ob_link_pos = target_tensor - origin                                                  # [N, L, 3]
+        ob_link_pos = rotatepoint(heading_orient_inv, ob_link_pos)                            # [N, L, 3]
         # ob_link_orient = quatmultiply(heading_orient_inv, target_ee_orient)                   # [N, L, 4]
 
         if env_ids is None or len(env_ids) == n_envs:
             for i in range(len(ee_link)):
-                self.goal_tensor[:, 3*(i+1) : 3*(i+1)+3] = target_tensor[:, i]      # [3,4,5]       [6,7,8]       [9,10,11]
+                self.goal_tensor[:, 3*(i+1) : 3*(i+1)+3] = ob_link_pos[:, i]      # [3,4,5]       [6,7,8]       [9,10,11]
                 # self.goal_tensor[:, 4*(i+3) : 4*(i+3)+4] = ob_link_orient[:, i]   # [12,13,14,15] [16,17,18,19] [20,21,22,23]
         else:
             for i in range(len(ee_link)):
-                self.goal_tensor[env_ids][:, 3*(i+1) : 3*(i+1)+3] = target_tensor[:, i]          # [3,4,5]        [6,7,8]      [9,10,11]
+                self.goal_tensor[env_ids][:, 3*(i+1) : 3*(i+1)+3] = ob_link_pos[:, i]          # [3,4,5]        [6,7,8]      [9,10,11]
                 # self.goal_tensor[env_ids][:, 4*(i+3) : 4*(i+3)+4] = ob_link_orient[:, i]       # [12,13,14,15] [16,17,18,19] [20,21,22,23]
 
 
@@ -1810,37 +1810,38 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
         # 1. Position
         # target/current position of head, rhand, lhand 
         target_ee_pos_tensor = self.goal_tensor[:, 3: 3 + 3*3].clone()              # [N, L* 3]     -> local
-        current_ee_pos = self.link_pos[:, [self.head_link, self.rhand_link, self.lhand_link]].view(target_ee_pos_tensor.size(0), -1)   # [N, L, 3]     -> global
-        
+        # current_ee_pos = self.link_pos[:, [self.head_link, self.rhand_link, self.lhand_link]].view(target_ee_pos_tensor.size(0), -1)   # [N, L, 3]     -> global
+        current_ee_pos = self.link_pos[:, [self.head_link, self.rhand_link, self.lhand_link]]             # [N, L, 3]     -> global
         # # 2. Orientation
         # # target/current orientation of head, rhand, lhand
         # target_ee_orient_tensor = self.goal_tensor[:, 12:]                                            # [N, L * 4]    -> local
         # current_ee_orient = self.link_orient[:, [self.head_link, self.rhand_link, self.lhand_link]]   # [N, L,  4]    -> global
 
         # # 3. current_ee_pos & current_ee_orient: global -> egocentric
-        # origin, root_orient = self.root_pos.clone(), self.root_orient.clone()
-        # origin[..., UP_AXIS] = 0
-        # heading = heading_zup(root_orient)                                                    # root_orient[-1] : N x 4 (마지막 frame) -> heading direction w.r.t. root
-        # up_dir = torch.zeros_like(origin)
-        # up_dir[..., UP_AXIS] = 1                                                               # z-up
-        # heading_orient_inv = axang2quat(up_dir, -heading)                                      # [N, 4]    
+        origin, root_orient = self.root_pos.clone(), self.root_orient.clone()
+        origin[..., UP_AXIS] = 0
+        heading = heading_zup(root_orient)                                                    # root_orient[-1] : N x 4 (마지막 frame) -> heading direction w.r.t. root
+        up_dir = torch.zeros_like(origin)
+        up_dir[..., UP_AXIS] = 1                                                               # z-up
+        heading_orient_inv = axang2quat(up_dir, -heading)                                      # [N, 4]    
         # heading_orient_inv = heading_orient_inv.view(-1).repeat(current_ee_pos.size(-2), 1)    # [L, N * 4]
         # heading_orient_inv = heading_orient_inv.reshape(current_ee_pos.size(-2), -1, 4)        # [L, N, 4]
         # heading_orient_inv = heading_orient_inv.permute(1, 0, 2)                               # [N, L, 4]
 
-        # origin = origin.unsqueeze_(-2)                                                    # N x 1 x 3
-        # current_ee_lpos = current_ee_pos - origin                                         # [N, L, 3]
+        origin = origin.unsqueeze_(-2)                                                    # N x 1 x 3
+        current_ee_lpos = current_ee_pos - origin                                         # [N, L, 3]
 
-        # current_ee_lpos = rotatepoint(heading_orient_inv, current_ee_lpos)                # [N, L, 3]
+        current_ee_lpos = rotatepoint(heading_orient_inv, current_ee_lpos)                # [N, L, 3]
         # current_ee_lorient = quatmultiply(heading_orient_inv, current_ee_orient)          # [N, L, 4]
 
-        # target_ee_pos_tensor = target_ee_pos_tensor.reshape(len(self.envs), -1, 3)
+        target_ee_pos_tensor = target_ee_pos_tensor.reshape(len(self.envs), -1, 3)
         # target_ee_orient_tensor = target_ee_orient_tensor.reshape(len(self.envs), -1, 4)
         
         # 4. difference b/w target <-> ee_pos
         # pos diff
         pos_diff = torch.linalg.norm(target_ee_pos_tensor.sub(current_ee_pos), ord=2, dim=-1)  # [N]
-        # pos_e = pos_diff.sum(-1, keepdim=True)
+        count = 3
+        pos_e = pos_diff.sum(-1, keepdim=True).div(count)
         # # orient diff
         # inv_target_ee_orient = utils.quat_inverse(target_ee_orient_tensor)
         # orient_diff = quatmultiply(inv_target_ee_orient, current_ee_lorient)              # [N, 3, 4]
@@ -1851,9 +1852,11 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
         # sum_angle_diff.div_(3)
 
         # aiming_rew = 0.5 * pos_e.mul_(-2).exp_() + 0.5 * sum_angle_diff.mul_(-2).exp_()
-        aiming_rew = (pos_diff.mul_(-2).exp_()).unsqueeze_(-1)                              # [N, 1]
+        # aiming_rew = (pos_diff.mul_(-2).exp_()).unsqueeze_(-1)                              # [N, 1]
+        aiming_rew = (pos_e.mul_(-2).exp_())                              # [N, 1]
         # 5. reward w/ exponential
         target_rew = super().reward(target_tensor)
+
         r = torch.cat((target_rew, aiming_rew), -1)
         return r
 
