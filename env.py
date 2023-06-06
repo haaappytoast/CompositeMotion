@@ -1872,24 +1872,24 @@ def observe_iccgan_target_ee(state_hist: torch.Tensor, seq_len: torch.Tensor,
     UP_AXIS = 2
     target_tensor = goal_tensor[..., :3]
     target_ob = observe_iccgan_target(state_hist, seq_len, target_tensor, timer, sp_upper_bound=sp_upper_bound, fps=fps)    # observe_iccgan(195 * N_Links) + target_obs (4)
-    root_pos = state_hist[-1, :, :3]
-    root_orient = state_hist[-1, :, 3:7]                    # 마지막 frame의 root_orient (N x 4)
-    heading = heading_zup(root_orient)
-    up_dir = torch.zeros_like(root_pos)
-    up_dir[..., UP_AXIS] = 1
-    orient_inv = axang2quat(up_dir, -heading)               # local root orientation [N, 4]
+    # root_pos = state_hist[-1, :, :3]
+    # root_orient = state_hist[-1, :, 3:7]                    # 마지막 frame의 root_orient (N x 4)
+    # heading = heading_zup(root_orient)
+    # up_dir = torch.zeros_like(root_pos)
+    # up_dir[..., UP_AXIS] = 1
+    # orient_inv = axang2quat(up_dir, -heading)               # local root orientation [N, 4]
     
-    orient_inv = orient_inv.unsqueeze_(1).repeat(1, 3, 1)   # [N, 3, 4]
+    # orient_inv = orient_inv.unsqueeze_(1).repeat(1, 3, 1)   # [N, 3, 4]
 
     # 1. target position / orientation의 global 좌표
     target_pos = torch.stack([goal_tensor[..., 3:6], goal_tensor[..., 6:9], goal_tensor[..., 9:12]], dim=1)          # [N, 3, 3], head, rhand, lhand
-    target_orient = torch.stack([goal_tensor[..., 12:16], goal_tensor[..., 16:20], goal_tensor[..., 20:24]], dim=1)  # [N, 3, 4], head, rhand, lhand
+    # target_orient = torch.stack([goal_tensor[..., 12:16], goal_tensor[..., 16:20], goal_tensor[..., 20:24]], dim=1)  # [N, 3, 4], head, rhand, lhand
 
     # 2. position/orientation: global -> egocentric
-    target_lpos = rotatepoint(orient_inv, target_pos)                # [N, 3, 3]
+    # target_lpos = rotatepoint(orient_inv, target_pos)                # [N, 3, 3]
     # target_lorient = quatmultiply(orient_inv, target_orient)         # [N, 3, 4]
 
-    target_lpos_flat = target_lpos.reshape(target_ob.size(0), -1)            # [N, 3x3]
+    target_lpos_flat = target_pos.reshape(target_ob.size(0), -1)            # [N, 3x3]
     # target_lorient_flat = target_lorient.reshape(target_ob.size(0), -1)      # [N, 3x4]
 
     # (784, 9, 12)
