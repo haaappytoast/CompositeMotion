@@ -1727,6 +1727,28 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
             gymutil.draw_lines(rsphere_geom, self.gym, self.viewer, self.envs[i], rhand_pose)   
             gymutil.draw_lines(lsphere_geom, self.gym, self.viewer, self.envs[i], lhand_pose)
         pass
+    
+    def visualize_current_local_ee(self):
+        temp_current_head = self.temp[:, 0]
+        temp_current_rhand = self.temp[:, 1]
+        temp_current_lhand = self.temp[:, 2]
+
+        for i in range(len(self.envs)):
+            # temp
+            _hsphere_geom = gymutil.WireframeBoxGeometry(0.1, 0.1, 0.1, None, color=(0.5, 1, 1))   # pink
+            _rsphere_geom = gymutil.WireframeBoxGeometry(0.1, 0.1, 0.1, None, color=(1, 1, 0.5))   # yellow
+            _lsphere_geom = gymutil.WireframeBoxGeometry(0.1, 0.1, 0.1, None, color=(1, 0.5, 1))   # pink
+            
+            _head_pos = temp_current_head[i]
+            _head_pose = gymapi.Transform(gymapi.Vec3(_head_pos[0], _head_pos[1], _head_pos[2]), r=None)
+            _rhand_pos = temp_current_rhand[i]
+            _rhand_pose = gymapi.Transform(gymapi.Vec3(_rhand_pos[0], _rhand_pos[1], _rhand_pos[2]), r=None)
+            _lhand_pos = temp_current_lhand[i]
+            _lhand_pose = gymapi.Transform(gymapi.Vec3(_lhand_pos[0], _lhand_pos[1], _lhand_pos[2]), r=None)
+
+            gymutil.draw_lines(_hsphere_geom, self.gym, self.viewer, self.envs[i], _head_pose)   
+            gymutil.draw_lines(_rsphere_geom, self.gym, self.viewer, self.envs[i], _rhand_pose)   
+            gymutil.draw_lines(_lsphere_geom, self.gym, self.viewer, self.envs[i], _lhand_pose)  
 
     def visualize_target_ee_tpos(self):
         # get global pos of head
@@ -1863,6 +1885,7 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
 
         target_ee_pos_tensor = target_ee_pos_tensor.reshape(len(self.envs), -1, 3)
         # target_ee_orient_tensor = target_ee_orient_tensor.reshape(len(self.envs), -1, 4)
+        self.temp = current_ee_lpos
         
         # 4. difference b/w target <-> ee_pos
         # pos diff
