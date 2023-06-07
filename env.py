@@ -691,6 +691,27 @@ class ICCGANHumanoid(Env):
             for d in discs: samples[d.name] = real
         return self.observe_disc(samples)
 
+    def visualize_origin(self):
+        pose = gymapi.Transform()
+        pose.p = gymapi.Vec3(0.0, 1.0, 0.0)
+        pose.r = gymapi.Quat(0, 0.0, 0.0, 1)
+        for i in range(len(self.envs)):
+            axes_geom = gymutil.AxesGeometry(1)
+            sphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(0, 0, 0))   # pink
+
+            gymutil.draw_lines(axes_geom, self.gym, self.viewer, self.envs[i], pose)
+            gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], pose)   
+
+        pass
+
+    def _visualize_axis_utils(self, gpos, gquat):
+        pose = gymapi.Transform()
+        pose.p = gymapi.Vec3(gpos[..., 0], gpos[..., 1], gpos[..., 2])
+        pose.r = gymapi.Quat(gquat[..., 0], gquat[..., 1], gquat[..., 2], gquat[..., 3])
+        for i in range(len(self.envs)):
+            axes_geom = gymutil.AxesGeometry(1)
+            gymutil.draw_lines(axes_geom, self.gym, self.viewer, self.envs[i], pose)
+
     def visualize_axis(self, gpos, gquat):
         gquat = gquat.view(-1, 4).cpu()                                                 # [num_envs x n_links, 4]
         tan_norm = utils.quat_to_tan_norm(gquat).cpu()
@@ -901,7 +922,11 @@ class ICCGANHumanoidTarget(ICCGANHumanoid):
         for i in range(n_lines)], -2)
         for e, l in zip(self.envs, lines):
             self.gym.add_lines(self.viewer, e, n_lines, l, [[0., 0., 1.] for _ in range(n_lines)])
-        # self.visualize_axis(self.link_pos, self.link_orient)
+
+        # self.visualize_axis(self.link_pos[:, [0], :], self.link_orient[:, [0], :])
+        # self._visualize_axis_utils(self.link_pos[:, [0], :], self.link_orient[:, [0], :])
+        self.visualize_origin()
+
     def _observe(self, env_ids):
         if env_ids is None:
             return observe_iccgan_target(
