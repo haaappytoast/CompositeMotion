@@ -1765,10 +1765,15 @@ class ICCGANHumanoidTargetEE(ICCGANHumanoidTarget):
         target_lhand_pos = head_gpos + larm_offset * head_binorm
         target_head_pos = head_gpos
 
+        target_head_pos = self.goal_tensor[:, 3:6]
+        target_rhand_pos = self.goal_tensor[:, 6:9]
+        target_lhand_pos = self.goal_tensor[:, 9:12]
+
+
         for i in range(len(self.envs)):
-            hsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 1, 1))   # pink
-            rsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 1, 0.5))   # yellow
-            lsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 0.5, 1))   # pink
+            hsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(0.1, 1, 1))   # pink
+            rsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 1, 0.1))   # yellow
+            lsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 0.1, 1))   # pink
             
             head_pos = target_head_pos[i]
             head_pose = gymapi.Transform(gymapi.Vec3(head_pos[0], head_pos[1], head_pos[2]), r=None)
