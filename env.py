@@ -2222,14 +2222,17 @@ class ICCGANHumanoidEE(ICCGANHumanoid):
         r = aiming_rew
         return r
 
-    def termination_check(self):
-        return super().termination_check(self.goal_tensor[:, :3])
-
+    def termination_check(self, goal_tensor=None):
+        # if goal_tensor is None: goal_tensor = self.goal_tensor
+        #! goal tensor에 관련된 terminate 조건 check
+        fall = super().termination_check()
+        return fall
 
 @torch.jit.script
-def observe_iccgan_ee(state_hist: torch.Tensor, seq_len: torch.Tensor, 
+def observe_iccgan_ee(state_hist: torch.Tensor, seq_len: torch.Tensor,
     goal_tensor: torch.Tensor
 ):
+    ob = observe_iccgan(state_hist, seq_len)
     UP_AXIS = 2
     # target_tensor = goal_tensor[..., :3]
     
@@ -2254,6 +2257,6 @@ def observe_iccgan_ee(state_hist: torch.Tensor, seq_len: torch.Tensor,
     # target_lorient_flat = target_lorient.reshape(target_ob.size(0), -1)      # [N, 3x4]
 
     # (784, 9, 12)
-    return target_lpos_flat
+    return torch.cat((ob, target_lpos_flat), -1)
 
 
