@@ -475,6 +475,8 @@ if __name__ == "__main__":
         env.episode_length = 500000
 
     value_dim = len(env.discriminators)+env.rew_dim
+    print("-----\nenv.state_dim: {}, env.act_dim: {}, env.goal_dim: {}, value_dim: {}\n-----".format(env.state_dim, env.act_dim, env.goal_dim, value_dim))
+
     model = ACModel(env.state_dim, env.act_dim, env.goal_dim, value_dim)
     discriminators = torch.nn.ModuleDict({
         name: Discriminator(dim) for name, dim in env.disc_dim.items()
