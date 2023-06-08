@@ -1952,3 +1952,320 @@ def observe_iccgan_target_ee(state_hist: torch.Tensor, seq_len: torch.Tensor,
     return torch.cat((target_ob, target_lpos_flat), -1)
 
 
+class ICCGANHumanoidEE(ICCGANHumanoidTarget):
+    
+    GOAL_REWARD_WEIGHT = 0.25, 0.25
+    GOAL_DIM = 4 + (0 + 3) * 3              # (x, y, sp, dist) + (orient + pos) * (ee)
+    GOAL_TENSOR_DIM = 3 + (0 + 3) * 3
+
+    def create_tensors(self):
+        super().create_tensors()
+        self.rhand_link = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actors[0], "right_hand")
+        self.lhand_link = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actors[0], "left_hand")
+        self.head_link = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actors[0], "head")
+
+        self.hand_link = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actors[0], "right_hand")
+        self.lower_arm_link = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actors[0], "right_lower_arm")
+
+        self.aiming_start_link = self.lower_arm_link
+        self.aiming_end_link = self.hand_link
+
+        self.x_dir = torch.zeros_like(self.root_pos)
+        self.x_dir[..., 0] = 1
+        self.reverse_rotation = torch.zeros_like(self.root_orient)
+        self.reverse_rotation[..., self.UP_AXIS] = 1
+
+    def _observe(self, env_ids):
+        if env_ids is None:
+            return observe_iccgan_ee(
+                self.state_hist[-self.ob_horizon:], self.ob_seq_lens,
+                self.goal_tensor, self.goal_timer,
+                sp_upper_bound=self.sp_upper_bound, goal_radius=self.goal_radius, fps=self.fps
+            )
+        else:
+            return observe_iccgan_ee(
+                self.state_hist[-self.ob_horizon:][:, env_ids], self.ob_seq_lens[env_ids],
+                self.goal_tensor[env_ids], self.goal_timer[env_ids],
+                sp_upper_bound=self.sp_upper_bound, goal_radius=self.goal_radius, fps=self.fps
+            )
+
+    def update_viewer(self):
+        super().update_viewer()
+        # debugging visualize head, right_hand, left_hand
+        self.visualize_ee_positions()
+        # self._visualize_target_ee_positions()
+        self.visualize_target_ee_tpos()
+        
+    def visualize_ee_positions(self):
+        ee_links = [2, 5, 8]
+        hsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 1, 1))   # pink
+        rsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 1, 0.3))   # yellow
+        lsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 0.3, 1))   # pink
+        ee_pos = self.link_pos[:, ee_links, :]
+
+        for i in range(len(self.envs)):
+            head_pos = ee_pos[i, 0]
+            rhand_pos = ee_pos[i, 1]
+            lhand_pos = ee_pos[i, 2]
+
+            head_pose = gymapi.Transform(gymapi.Vec3(head_pos[0], head_pos[1], head_pos[2]), r=None)
+            rhand_pose = gymapi.Transform(gymapi.Vec3(rhand_pos[0], rhand_pos[1], rhand_pos[2]), r=None)
+            lhand_pose = gymapi.Transform(gymapi.Vec3(lhand_pos[0], lhand_pos[1], lhand_pos[2]), r=None)
+
+            gymutil.draw_lines(hsphere_geom, self.gym, self.viewer, self.envs[i], head_pose)   
+            gymutil.draw_lines(rsphere_geom, self.gym, self.viewer, self.envs[i], rhand_pose)   
+            gymutil.draw_lines(lsphere_geom, self.gym, self.viewer, self.envs[i], lhand_pose)
+
+    def _visualize_target_ee_positions(self):
+        ee_links = [2, 5, 8]
+        hsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(0, 1, 1))
+        rsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(0, 1, 0))
+        lsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(0, 0, 1))
+        ee_pparent_pos = self.link_pos[:, [0, 3, 6], :]  # [N, L, 3]
+        ee_parent_pos = self.link_pos[:, [1, 4, 7], :]   # [N, L, 3]
+        ee_pos = self.link_pos[:, ee_links, :]           # [N, L, 3]
+
+        ee_link_len = torch.linalg.norm((ee_pos - ee_parent_pos), ord=2, dim=-1, keepdim=True) # [N, L, 1]
+        
+        ee_plink_len = torch.linalg.norm((ee_parent_pos - ee_pparent_pos), ord=2, dim=-1, keepdim=True)
+        link_dir =  (ee_parent_pos - ee_pparent_pos) / ee_plink_len
+
+        target_ee_pos = ee_parent_pos + ee_link_len * link_dir
+        
+        for i in range(len(self.envs)):
+            head_pos = target_ee_pos[i, 0]
+            rhand_pos = target_ee_pos[i, 1]
+            lhand_pos = target_ee_pos[i, 2]
+
+            head_pose = gymapi.Transform(gymapi.Vec3(head_pos[0], head_pos[1], head_pos[2]), r=None)
+            rhand_pose = gymapi.Transform(gymapi.Vec3(rhand_pos[0], rhand_pos[1], rhand_pos[2]), r=None)
+            lhand_pose = gymapi.Transform(gymapi.Vec3(lhand_pos[0], lhand_pos[1], lhand_pos[2]), r=None)
+
+            gymutil.draw_lines(hsphere_geom, self.gym, self.viewer, self.envs[i], head_pose)   
+            gymutil.draw_lines(rsphere_geom, self.gym, self.viewer, self.envs[i], rhand_pose)   
+            gymutil.draw_lines(lsphere_geom, self.gym, self.viewer, self.envs[i], lhand_pose)
+        pass
+    
+    def visualize_current_local_ee(self):
+        temp_current_head = self.temp[:, 0]
+        temp_current_rhand = self.temp[:, 1]
+        temp_current_lhand = self.temp[:, 2]
+
+        for i in range(len(self.envs)):
+            # temp
+            _hsphere_geom = gymutil.WireframeBoxGeometry(0.1, 0.1, 0.1, None, color=(0.5, 1, 1))   # pink
+            _rsphere_geom = gymutil.WireframeBoxGeometry(0.1, 0.1, 0.1, None, color=(1, 1, 0.5))   # yellow
+            _lsphere_geom = gymutil.WireframeBoxGeometry(0.1, 0.1, 0.1, None, color=(1, 0.5, 1))   # pink
+            
+            _head_pos = temp_current_head[i]
+            _head_pose = gymapi.Transform(gymapi.Vec3(_head_pos[0], _head_pos[1], _head_pos[2]), r=None)
+            _rhand_pos = temp_current_rhand[i]
+            _rhand_pose = gymapi.Transform(gymapi.Vec3(_rhand_pos[0], _rhand_pos[1], _rhand_pos[2]), r=None)
+            _lhand_pos = temp_current_lhand[i]
+            _lhand_pose = gymapi.Transform(gymapi.Vec3(_lhand_pos[0], _lhand_pos[1], _lhand_pos[2]), r=None)
+
+            gymutil.draw_lines(_hsphere_geom, self.gym, self.viewer, self.envs[i], _head_pose)   
+            gymutil.draw_lines(_rsphere_geom, self.gym, self.viewer, self.envs[i], _rhand_pose)   
+            gymutil.draw_lines(_lsphere_geom, self.gym, self.viewer, self.envs[i], _lhand_pose)  
+
+    def visualize_target_ee_tpos(self):
+        # get global pos of head
+        head_gpos = self.link_pos[:, [2], :].squeeze_(1).cpu()                                   # [n_envs, 3] 
+        # get z-axis of head
+        head_tan_norm = utils.quat_to_tan_norm(self.link_orient[:, [2], :].squeeze_(1)).cpu()    # z-axis of head link
+        # head_norm = torch.nn.functional.normalize(head_tan_norm[..., 3:6])
+        rot_mat = utils.tan_norm_to_rotmat(head_tan_norm).cpu()
+        head_binorm = torch.nn.functional.normalize(rot_mat[..., 3:6])       # y-axis [num_envs x n_links, 3]
+
+        rarm_offset, larm_offset = self.rarm_len.item(), self.larm_len.item()
+
+        target_rhand_pos = head_gpos + rarm_offset * (-head_binorm)               # [n_envs, 3]
+        target_lhand_pos = head_gpos + larm_offset * head_binorm
+        target_head_pos = head_gpos
+
+        target_head_pos = self.goal_tensor[:, 3:6]
+        target_rhand_pos = self.goal_tensor[:, 6:9]
+        target_lhand_pos = self.goal_tensor[:, 9:12]
+
+
+        for i in range(len(self.envs)):
+            hsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(0.1, 1, 1))   # pink
+            rsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 1, 0.1))   # yellow
+            lsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 0.1, 1))   # pink
+            
+            head_pos = target_head_pos[i]
+            head_pose = gymapi.Transform(gymapi.Vec3(head_pos[0], head_pos[1], head_pos[2]), r=None)
+            rhand_pos = target_rhand_pos[i]
+            rhand_pose = gymapi.Transform(gymapi.Vec3(rhand_pos[0], rhand_pos[1], rhand_pos[2]), r=None)
+            lhand_pos = target_lhand_pos[i]
+            lhand_pose = gymapi.Transform(gymapi.Vec3(lhand_pos[0], lhand_pos[1], lhand_pos[2]), r=None)
+
+            gymutil.draw_lines(hsphere_geom, self.gym, self.viewer, self.envs[i], head_pose)   
+            gymutil.draw_lines(rsphere_geom, self.gym, self.viewer, self.envs[i], rhand_pose)   
+            gymutil.draw_lines(lsphere_geom, self.gym, self.viewer, self.envs[i], lhand_pose)   
+
+    def reset_goal(self, env_ids):
+        super().reset_goal(env_ids, self.goal_tensor[:, :3])
+        self.reset_ee_goal(env_ids) #[3 ~ 11]: pos, [12 ~ 23]:orient
+
+    def reset_ee_goal(self, env_ids, goal_tensor=None, goal_timer=None):
+        n_envs = len(self.envs)
+
+        UP_AXIS = 2
+        ee_link = [2, 5, 8]
+        if env_ids is None or len(env_ids) == n_envs:
+            root_pos = self.root_pos
+            root_orient = self.root_orient
+            # #! 바꿔야됌 -> goal 내가 지정한 direction으로! -> ee_position visualize 다시
+            # ee_pparent_pos = self.link_pos[:, [0, 3, 6], :]  # [N, L, 3]
+            # ee_parent_pos = self.link_pos[:, [1, 4, 7], :]   # [N, L, 3]
+            ee_pos, ee_orient = self.link_pos[:, ee_link], self.link_orient[:, ee_link]
+
+        else:
+            root_pos = self.root_pos[env_ids]
+            root_orient = self.root_orient[env_ids]
+            # #! 바꿔야됌 -> goal 내가 지정한 direction으로! -> ee_position visualize 다시
+            # ee_pparent_pos = self.link_pos[env_ids][:, [0, 3, 6], :]                                        # [N, L, 3]
+            # ee_parent_pos = self.link_pos[env_ids][:, [1, 4, 7], :]                                         # [N, L, 3]
+            ee_pos, ee_orient = self.link_pos[env_ids][:, ee_link, :], self.link_orient[env_ids][:, ee_link, :]   # [N, L, 3], [N, L, 4]
+
+        head_gpos = ee_pos[:, 0, :]         # [N, 3]
+        head_tan_norm = utils.quat_to_tan_norm(ee_orient[:, 0, :])           # z-axis of head link
+        rot_mat = utils.tan_norm_to_rotmat(head_tan_norm)
+        head_binorm = torch.nn.functional.normalize(rot_mat[..., 3:6])       # y-axis [num_envs x n_links, 3]
+
+        rarm_offset, larm_offset = self.rarm_len.item(), self.larm_len.item()
+
+        target_rhand_pos = head_gpos + rarm_offset * (-head_binorm)               # [n_envs, 3]
+        target_lhand_pos = head_gpos + larm_offset * head_binorm
+        target_head_pos = head_gpos
+        
+        target_tensor = torch.cat([target_head_pos, target_rhand_pos, target_lhand_pos], dim=-1).view(len(env_ids), -1, 3)  # [n_envs, n_links, 3]
+        
+        # ee_link_len = torch.linalg.norm((ee_pos - ee_parent_pos), ord=2, dim=-1, keepdim=True) # [N, L, 1]
+        # ee_plink_len = torch.linalg.norm((ee_parent_pos - ee_pparent_pos), ord=2, dim=-1, keepdim=True)
+
+        # link_dir =  (ee_parent_pos - ee_pparent_pos) / ee_plink_len
+        # target_ee_pos = ee_parent_pos + ee_link_len * link_dir                                #[N, L, 3]
+
+        # # Quaternion
+        # target_ee_orient = torch.zeros_like(ee_orient)
+        # target_ee_orient[..., -1] = 1
+        origin = root_pos.clone()
+        origin[..., UP_AXIS] = 0
+        heading = heading_zup(root_orient)                                                    # root_orient[-1] : N x 4 (마지막 frame) -> heading direction w.r.t. root
+        up_dir = torch.zeros_like(origin)
+        up_dir[..., UP_AXIS] = 1                                                              # z-up
+        heading_orient_inv = axang2quat(up_dir, -heading)                                     # [N, 4]    
+        heading_orient_inv = heading_orient_inv.view(-1).repeat(target_tensor.size(-1), 1)    # [L, N * 4]
+        heading_orient_inv = heading_orient_inv.reshape(target_tensor.size(-1), -1, 4)        # [L, N, 4]
+        heading_orient_inv = heading_orient_inv.permute(1, 0, 2)                              # [N, L, 4]
+        origin = origin.unsqueeze_(-2)                                                        #  N x 1 x 3
+        ob_link_pos = target_tensor - origin                                                  # [N, L, 3]
+        ob_link_pos = rotatepoint(heading_orient_inv, ob_link_pos)                            # [N, L, 3]
+        # ob_link_orient = quatmultiply(heading_orient_inv, target_ee_orient)                   # [N, L, 4]
+
+        if env_ids is None or len(env_ids) == n_envs:
+            for i in range(len(ee_link)):
+                self.goal_tensor[:, 3*(i+1) : 3*(i+1)+3] = ob_link_pos[:, i]      # [3,4,5]       [6,7,8]       [9,10,11]
+                # self.goal_tensor[:, 4*(i+3) : 4*(i+3)+4] = ob_link_orient[:, i]   # [12,13,14,15] [16,17,18,19] [20,21,22,23]
+        else:
+            for i in range(len(ee_link)):
+                self.goal_tensor[env_ids][:, 3*(i+1) : 3*(i+1)+3] = ob_link_pos[:, i]          # [3,4,5]        [6,7,8]      [9,10,11]
+                # self.goal_tensor[env_ids][:, 4*(i+3) : 4*(i+3)+4] = ob_link_orient[:, i]       # [12,13,14,15] [16,17,18,19] [20,21,22,23]
+
+
+    def reward(self):
+        target_tensor = self.goal_tensor[:, :3]
+        UP_AXIS = 2
+
+        # 1. Position
+        # target/current position of head, rhand, lhand 
+        target_ee_pos_tensor = self.goal_tensor[:, 3: 3 + 3*3].clone()              # [N, L* 3]     -> local
+        # current_ee_pos = self.link_pos[:, [self.head_link, self.rhand_link, self.lhand_link]].view(target_ee_pos_tensor.size(0), -1)   # [N, L, 3]     -> global
+        current_ee_pos = self.link_pos[:, [self.head_link, self.rhand_link, self.lhand_link]]             # [N, L, 3]     -> global
+        # # 2. Orientation
+        # # target/current orientation of head, rhand, lhand
+        # target_ee_orient_tensor = self.goal_tensor[:, 12:]                                            # [N, L * 4]    -> local
+        # current_ee_orient = self.link_orient[:, [self.head_link, self.rhand_link, self.lhand_link]]   # [N, L,  4]    -> global
+
+        # # 3. current_ee_pos & current_ee_orient: global -> egocentric
+        origin, root_orient = self.root_pos.clone(), self.root_orient.clone()
+        origin[..., UP_AXIS] = 0
+        heading = heading_zup(root_orient)                                                    # root_orient[-1] : N x 4 (마지막 frame) -> heading direction w.r.t. root
+        up_dir = torch.zeros_like(origin)
+        up_dir[..., UP_AXIS] = 1                                                               # z-up
+        heading_orient_inv = axang2quat(up_dir, -heading)                                      # [N, 4]    
+        heading_orient_inv = heading_orient_inv.view(-1).repeat(current_ee_pos.size(-2), 1)    # [L, N * 4]
+        heading_orient_inv = heading_orient_inv.reshape(current_ee_pos.size(-2), -1, 4)        # [L, N, 4]
+        heading_orient_inv = heading_orient_inv.permute(1, 0, 2)                               # [N, L, 4]
+
+        origin = origin.unsqueeze_(-2)                                                    # N x 1 x 3
+        current_ee_lpos = current_ee_pos - origin                                         # [N, L, 3]
+
+        current_ee_lpos = rotatepoint(heading_orient_inv, current_ee_lpos)                # [N, L, 3]
+        # current_ee_lorient = quatmultiply(heading_orient_inv, current_ee_orient)          # [N, L, 4]
+
+        target_ee_pos_tensor = target_ee_pos_tensor.reshape(len(self.envs), -1, 3)
+        # target_ee_orient_tensor = target_ee_orient_tensor.reshape(len(self.envs), -1, 4)
+        self.temp = current_ee_lpos
+        
+        # 4. difference b/w target <-> ee_pos
+        # pos diff
+        pos_diff = torch.linalg.norm(target_ee_pos_tensor.sub(current_ee_pos), ord=2, dim=-1)  # [N]
+        count = 3
+        pos_e = pos_diff.sum(-1, keepdim=True).div(count)
+        # # orient diff
+        # inv_target_ee_orient = utils.quat_inverse(target_ee_orient_tensor)
+        # orient_diff = quatmultiply(inv_target_ee_orient, current_ee_lorient)              # [N, 3, 4]
+        # _, angle_diff = utils.quat2axang(orient_diff)                                     # [N, 3]
+
+
+        # sum_angle_diff = (angle_diff**2).sum(dim=-1, keepdim=True)
+        # sum_angle_diff.div_(3)
+
+        # aiming_rew = 0.5 * pos_e.mul_(-2).exp_() + 0.5 * sum_angle_diff.mul_(-2).exp_()
+        # aiming_rew = (pos_diff.mul_(-2).exp_()).unsqueeze_(-1)                              # [N, 1]
+        aiming_rew = (pos_e.mul_(-2).exp_())                              # [N, 1]
+        # 5. reward w/ exponential
+        target_rew = super().reward(target_tensor)
+
+        r = torch.cat((target_rew, aiming_rew), -1)
+        return r
+
+    def termination_check(self):
+        return super().termination_check(self.goal_tensor[:, :3])
+
+
+@torch.jit.script
+def observe_iccgan_ee(state_hist: torch.Tensor, seq_len: torch.Tensor, 
+    goal_tensor: torch.Tensor, timer: torch.Tensor,
+    sp_upper_bound: float, goal_radius: float, fps: int
+):
+    UP_AXIS = 2
+    target_tensor = goal_tensor[..., :3]
+    target_ob = observe_iccgan_target(state_hist, seq_len, target_tensor, timer, sp_upper_bound=sp_upper_bound, fps=fps)    # observe_iccgan(195 * N_Links) + target_obs (4)
+    # root_pos = state_hist[-1, :, :3]
+    # root_orient = state_hist[-1, :, 3:7]                    # 마지막 frame의 root_orient (N x 4)
+    # heading = heading_zup(root_orient)
+    # up_dir = torch.zeros_like(root_pos)
+    # up_dir[..., UP_AXIS] = 1
+    # orient_inv = axang2quat(up_dir, -heading)               # local root orientation [N, 4]
+    
+    # orient_inv = orient_inv.unsqueeze_(1).repeat(1, 3, 1)   # [N, 3, 4]
+
+    # 1. target position / orientation의 global 좌표
+    target_pos = torch.stack([goal_tensor[..., 3:6], goal_tensor[..., 6:9], goal_tensor[..., 9:12]], dim=1)          # [N, 3, 3], head, rhand, lhand
+    # target_orient = torch.stack([goal_tensor[..., 12:16], goal_tensor[..., 16:20], goal_tensor[..., 20:24]], dim=1)  # [N, 3, 4], head, rhand, lhand
+
+    # 2. position/orientation: global -> egocentric
+    # target_lpos = rotatepoint(orient_inv, target_pos)                # [N, 3, 3]
+    # target_lorient = quatmultiply(orient_inv, target_orient)         # [N, 3, 4]
+
+    target_lpos_flat = target_pos.reshape(target_ob.size(0), -1)            # [N, 3x3]
+    # target_lorient_flat = target_lorient.reshape(target_ob.size(0), -1)      # [N, 3x4]
+
+    # (784, 9, 12)
+    # return torch.cat((target_ob, target_lpos_flat, target_lorient_flat), -1)
+    return torch.cat((target_ob, target_lpos_flat), -1)
+
