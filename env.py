@@ -1954,9 +1954,14 @@ def observe_iccgan_target_ee(state_hist: torch.Tensor, seq_len: torch.Tensor,
 
 class ICCGANHumanoidEE(ICCGANHumanoid):
     
-    GOAL_REWARD_WEIGHT = 0.25, 0.25
-    GOAL_DIM = (0 + 3) * 3              # (x, y, sp, dist) + (orient + pos) * (ee)
-    GOAL_TENSOR_DIM = (0 + 3) * 3
+    GOAL_REWARD_WEIGHT = 0.5
+    GOAL_DIM = (0 + 3) * 2              # (x, y, sp, dist) + (orient + pos) * (ee)
+    GOAL_TENSOR_DIM = (0 + 3) * 2
+    OB_HORIZON = 2
+    ENABLE_GOAL_TIMER = True
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     def create_tensors(self):
         super().create_tensors()
@@ -2108,7 +2113,8 @@ class ICCGANHumanoidEE(ICCGANHumanoid):
         n_envs = len(self.envs)
 
         UP_AXIS = 2
-        ee_link = [2, 5, 8]
+        # ee_link = [2, 5, 8]
+        ee_link = [5, 8]
         if env_ids is None or len(env_ids) == n_envs:
             root_pos = self.root_pos
             root_orient = self.root_orient
@@ -2167,12 +2173,12 @@ class ICCGANHumanoidEE(ICCGANHumanoid):
 
     def reward(self):
         UP_AXIS = 2
-
         # 1. Position
-        # target/current position of head, rhand, lhand 
-        target_ee_pos_tensor = self.goal_tensor[:, 3: 3 + 3*3].clone()              # [N, L* 3]     -> local
+        # target/current position of head, rhand, lhand
+        target_ee_pos_tensor = self.goal_tensor[:, 0: 2*3].clone()              # [N, L* 3]     -> local
         # current_ee_pos = self.link_pos[:, [self.head_link, self.rhand_link, self.lhand_link]].view(target_ee_pos_tensor.size(0), -1)   # [N, L, 3]     -> global
-        current_ee_pos = self.link_pos[:, [self.head_link, self.rhand_link, self.lhand_link]]             # [N, L, 3]     -> global
+        # current_ee_pos = self.link_pos[:, [self.head_link, self.rhand_link, self.lhand_link]]             # [N, L, 3]     -> global
+        current_ee_pos = self.link_pos[:, [self.rhand_link, self.lhand_link]]             # [N, L, 3]     -> global
         # # 2. Orientation
         # # target/current orientation of head, rhand, lhand
         # target_ee_orient_tensor = self.goal_tensor[:, 12:]                                            # [N, L * 4]    -> local
@@ -2184,7 +2190,7 @@ class ICCGANHumanoidEE(ICCGANHumanoid):
         heading = heading_zup(root_orient)                                                    # root_orient[-1] : N x 4 (마지막 frame) -> heading direction w.r.t. root
         up_dir = torch.zeros_like(origin)
         up_dir[..., UP_AXIS] = 1                                                               # z-up
-        heading_orient_inv = axang2quat(up_dir, -heading)                                      # [N, 4]    
+        heading_orient_inv = axang2quat(up_dir, -heading)                                      # [N, 4]   
         heading_orient_inv = heading_orient_inv.view(-1).repeat(current_ee_pos.size(-2), 1)    # [L, N * 4]
         heading_orient_inv = heading_orient_inv.reshape(current_ee_pos.size(-2), -1, 4)        # [L, N, 4]
         heading_orient_inv = heading_orient_inv.permute(1, 0, 2)                               # [N, L, 4]
@@ -2246,7 +2252,7 @@ def observe_iccgan_ee(state_hist: torch.Tensor, seq_len: torch.Tensor,
     # orient_inv = orient_inv.unsqueeze_(1).repeat(1, 3, 1)   # [N, 3, 4]
 
     # 1. target position / orientation의 global 좌표
-    target_pos = torch.stack([goal_tensor[..., 3:6], goal_tensor[..., 6:9], goal_tensor[..., 9:12]], dim=1)          # [N, 3, 3], head, rhand, lhand
+    target_pos = torch.stack([goal_tensor[..., 0:3], goal_tensor[..., 3:6]], dim=1)          # [N, 3, 3], head, rhand, lhand
     # target_orient = torch.stack([goal_tensor[..., 12:16], goal_tensor[..., 16:20], goal_tensor[..., 20:24]], dim=1)  # [N, 3, 4], head, rhand, lhand
 
     # 2. position/orientation: global -> egocentric
