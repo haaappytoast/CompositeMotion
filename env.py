@@ -1952,11 +1952,11 @@ def observe_iccgan_target_ee(state_hist: torch.Tensor, seq_len: torch.Tensor,
     return torch.cat((target_ob, target_lpos_flat), -1)
 
 
-class ICCGANHumanoidEE(ICCGANHumanoidTarget):
+class ICCGANHumanoidEE(ICCGANHumanoid):
     
     GOAL_REWARD_WEIGHT = 0.25, 0.25
-    GOAL_DIM = 4 + (0 + 3) * 3              # (x, y, sp, dist) + (orient + pos) * (ee)
-    GOAL_TENSOR_DIM = 3 + (0 + 3) * 3
+    GOAL_DIM = (0 + 3) * 3              # (x, y, sp, dist) + (orient + pos) * (ee)
+    GOAL_TENSOR_DIM = (0 + 3) * 3
 
     def create_tensors(self):
         super().create_tensors()
@@ -1967,30 +1967,27 @@ class ICCGANHumanoidEE(ICCGANHumanoidTarget):
         self.hand_link = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actors[0], "right_hand")
         self.lower_arm_link = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actors[0], "right_lower_arm")
 
-        self.aiming_start_link = self.lower_arm_link
-        self.aiming_end_link = self.hand_link
-
-        self.x_dir = torch.zeros_like(self.root_pos)
-        self.x_dir[..., 0] = 1
-        self.reverse_rotation = torch.zeros_like(self.root_orient)
-        self.reverse_rotation[..., self.UP_AXIS] = 1
+        # self.x_dir = torch.zeros_like(self.root_pos)
+        # self.x_dir[..., 0] = 1
+        # self.reverse_rotation = torch.zeros_like(self.root_orient)
+        # self.reverse_rotation[..., self.UP_AXIS] = 1
 
     def _observe(self, env_ids):
         if env_ids is None:
             return observe_iccgan_ee(
                 self.state_hist[-self.ob_horizon:], self.ob_seq_lens,
-                self.goal_tensor, self.goal_timer,
-                sp_upper_bound=self.sp_upper_bound, goal_radius=self.goal_radius, fps=self.fps
+                self.goal_tensor
             )
         else:
             return observe_iccgan_ee(
                 self.state_hist[-self.ob_horizon:][:, env_ids], self.ob_seq_lens[env_ids],
-                self.goal_tensor[env_ids], self.goal_timer[env_ids],
-                sp_upper_bound=self.sp_upper_bound, goal_radius=self.goal_radius, fps=self.fps
+                self.goal_tensor[env_ids]
             )
 
     def update_viewer(self):
         super().update_viewer()
+
+        self.visualize_origin()
         # debugging visualize head, right_hand, left_hand
         self.visualize_ee_positions()
         # self._visualize_target_ee_positions()
@@ -2105,8 +2102,7 @@ class ICCGANHumanoidEE(ICCGANHumanoidTarget):
             gymutil.draw_lines(lsphere_geom, self.gym, self.viewer, self.envs[i], lhand_pose)   
 
     def reset_goal(self, env_ids):
-        super().reset_goal(env_ids, self.goal_tensor[:, :3])
-        self.reset_ee_goal(env_ids) #[3 ~ 11]: pos, [12 ~ 23]:orient
+        self.reset_ee_goal(env_ids) #[0:9]: pos, [12:24]: orient
 
     def reset_ee_goal(self, env_ids, goal_tensor=None, goal_timer=None):
         n_envs = len(self.envs)
@@ -2142,12 +2138,6 @@ class ICCGANHumanoidEE(ICCGANHumanoidTarget):
         
         target_tensor = torch.cat([target_head_pos, target_rhand_pos, target_lhand_pos], dim=-1).view(len(env_ids), -1, 3)  # [n_envs, n_links, 3]
         
-        # ee_link_len = torch.linalg.norm((ee_pos - ee_parent_pos), ord=2, dim=-1, keepdim=True) # [N, L, 1]
-        # ee_plink_len = torch.linalg.norm((ee_parent_pos - ee_pparent_pos), ord=2, dim=-1, keepdim=True)
-
-        # link_dir =  (ee_parent_pos - ee_pparent_pos) / ee_plink_len
-        # target_ee_pos = ee_parent_pos + ee_link_len * link_dir                                #[N, L, 3]
-
         # # Quaternion
         # target_ee_orient = torch.zeros_like(ee_orient)
         # target_ee_orient[..., -1] = 1
@@ -2163,20 +2153,19 @@ class ICCGANHumanoidEE(ICCGANHumanoidTarget):
         origin = origin.unsqueeze_(-2)                                                        #  N x 1 x 3
         ob_link_pos = target_tensor - origin                                                  # [N, L, 3]
         ob_link_pos = rotatepoint(heading_orient_inv, ob_link_pos)                            # [N, L, 3]
-        # ob_link_orient = quatmultiply(heading_orient_inv, target_ee_orient)                   # [N, L, 4]
+        # ob_link_orient = quatmultiply(heading_orient_inv, target_ee_orient)                 # [N, L, 4]
 
         if env_ids is None or len(env_ids) == n_envs:
             for i in range(len(ee_link)):
-                self.goal_tensor[:, 3*(i+1) : 3*(i+1)+3] = ob_link_pos[:, i]      # [3,4,5]       [6,7,8]       [9,10,11]
+                self.goal_tensor[:, 3*(i) : 3*(i)+3] = ob_link_pos[:, i]            # [0,1,2]  [3,4,5]  [6,7,8]
                 # self.goal_tensor[:, 4*(i+3) : 4*(i+3)+4] = ob_link_orient[:, i]   # [12,13,14,15] [16,17,18,19] [20,21,22,23]
         else:
             for i in range(len(ee_link)):
-                self.goal_tensor[env_ids][:, 3*(i+1) : 3*(i+1)+3] = ob_link_pos[:, i]          # [3,4,5]        [6,7,8]      [9,10,11]
+                self.goal_tensor[env_ids][:, 3*(i) : 3*(i)+3] = ob_link_pos[:, i]   # [0,1,2]  [3,4,5]  [6,7,8]
                 # self.goal_tensor[env_ids][:, 4*(i+3) : 4*(i+3)+4] = ob_link_orient[:, i]       # [12,13,14,15] [16,17,18,19] [20,21,22,23]
 
 
     def reward(self):
-        target_tensor = self.goal_tensor[:, :3]
         UP_AXIS = 2
 
         # 1. Position
@@ -2228,9 +2217,9 @@ class ICCGANHumanoidEE(ICCGANHumanoidTarget):
         # aiming_rew = (pos_diff.mul_(-2).exp_()).unsqueeze_(-1)                              # [N, 1]
         aiming_rew = (pos_e.mul_(-2).exp_())                              # [N, 1]
         # 5. reward w/ exponential
-        target_rew = super().reward(target_tensor)
+        # target_rew = super().reward(target_tensor)
 
-        r = torch.cat((target_rew, aiming_rew), -1)
+        r = aiming_rew
         return r
 
     def termination_check(self):
@@ -2239,12 +2228,11 @@ class ICCGANHumanoidEE(ICCGANHumanoidTarget):
 
 @torch.jit.script
 def observe_iccgan_ee(state_hist: torch.Tensor, seq_len: torch.Tensor, 
-    goal_tensor: torch.Tensor, timer: torch.Tensor,
-    sp_upper_bound: float, goal_radius: float, fps: int
+    goal_tensor: torch.Tensor
 ):
     UP_AXIS = 2
-    target_tensor = goal_tensor[..., :3]
-    target_ob = observe_iccgan_target(state_hist, seq_len, target_tensor, timer, sp_upper_bound=sp_upper_bound, fps=fps)    # observe_iccgan(195 * N_Links) + target_obs (4)
+    # target_tensor = goal_tensor[..., :3]
+    
     # root_pos = state_hist[-1, :, :3]
     # root_orient = state_hist[-1, :, 3:7]                    # 마지막 frame의 root_orient (N x 4)
     # heading = heading_zup(root_orient)
@@ -2262,10 +2250,10 @@ def observe_iccgan_ee(state_hist: torch.Tensor, seq_len: torch.Tensor,
     # target_lpos = rotatepoint(orient_inv, target_pos)                # [N, 3, 3]
     # target_lorient = quatmultiply(orient_inv, target_orient)         # [N, 3, 4]
 
-    target_lpos_flat = target_pos.reshape(target_ob.size(0), -1)            # [N, 3x3]
+    target_lpos_flat = target_pos.reshape(target_pos.size(0), -1)            # [N, 3x3]
     # target_lorient_flat = target_lorient.reshape(target_ob.size(0), -1)      # [N, 3x4]
 
     # (784, 9, 12)
-    # return torch.cat((target_ob, target_lpos_flat, target_lorient_flat), -1)
-    return torch.cat((target_ob, target_lpos_flat), -1)
+    return target_lpos_flat
+
 
