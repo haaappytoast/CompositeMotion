@@ -2081,55 +2081,46 @@ class ICCGANHumanoidEE(ICCGANHumanoid):
 
     def reset_ee_goal(self, env_ids, goal_tensor=None, goal_timer=None):
         n_envs = len(self.envs)
-
         UP_AXIS = 2
         ee_link = [5, 8]
         if env_ids is None or len(env_ids) == n_envs:
             root_pos = self.root_pos
             root_orient = self.root_orient
             ee_pos, ee_orient = self.link_pos[:, ee_link], self.link_orient[:, ee_link]
-
+            head_gpos = self.link_pos[:, 0, :]         # [N, 3]
+            head_grot = self.link_orient[:, 0, :]
         else:
             root_pos = self.root_pos[env_ids]
             root_orient = self.root_orient[env_ids]
             ee_pos, ee_orient = self.link_pos[env_ids][:, ee_link, :], self.link_orient[env_ids][:, ee_link, :]   # [N, L, 3], [N, L, 4]
-
-        head_gpos = self.link_pos[:, 0, :]         # [N, 3]
-        head_grot = self.link_orient[:, 0, :]
-        
+            head_gpos = self.link_pos[env_ids][:, 0, :]         # [N, 3]
+            head_grot = self.link_orient[env_ids][:, 0, :]
         head_tan_norm = utils.quat_to_tan_norm(head_grot)                    # z-axis of head link
         rot_mat = utils.tan_norm_to_rotmat(head_tan_norm)
         head_binorm = torch.nn.functional.normalize(rot_mat[..., 3:6])       # y-axis [num_envs x n_links, 3]
-
         rarm_offset, larm_offset = self.rarm_len.item(), self.larm_len.item()
-
         target_head_pos = head_gpos
         target_rhand_pos = head_gpos + rarm_offset * (-head_binorm)               # [n_envs, 3]
         target_lhand_pos = head_gpos + larm_offset * head_binorm
-        
         target_tensor = torch.cat([target_rhand_pos, target_lhand_pos], dim=-1).view(len(env_ids), -1, 3)  # [n_envs, n_links, 3]
-        
         origin = root_pos.clone()
         origin[..., UP_AXIS] = 0
         heading = heading_zup(root_orient)                                                    # root_orient[-1] : N x 4 (마지막 frame) -> heading direction w.r.t. root
         up_dir = torch.zeros_like(origin)
         up_dir[..., UP_AXIS] = 1                                                              # z-up
-        heading_orient_inv = axang2quat(up_dir, -heading)                                     # [N, 4]    
+        heading_orient_inv = axang2quat(up_dir, -heading)                                     # [N, 4]   
         heading_orient_inv = heading_orient_inv.view(-1).repeat(target_tensor.size(-2), 1)    # [L, N * 4]
         heading_orient_inv = heading_orient_inv.reshape(target_tensor.size(-2), -1, 4)        # [L, N, 4]
         heading_orient_inv = heading_orient_inv.permute(1, 0, 2)                              # [N, L, 4]
         origin = origin.unsqueeze_(-2)                                                        #  N x 1 x 3
-
         ob_link_pos = target_tensor - origin                                                  # [N, L, 3]
         ob_link_pos = rotatepoint(heading_orient_inv, ob_link_pos)                            # [N, L, 3]
-
         if env_ids is None or len(env_ids) == n_envs:
             for i in range(len(ee_link)):
                 self.goal_tensor[:, 3*(i) : 3*(i)+3] = ob_link_pos[:, i]            # [0,1,2]  [3,4,5]  [6,7,8]
         else:
             for i in range(len(ee_link)):
                 self.goal_tensor[env_ids][:, 3*(i) : 3*(i)+3] = ob_link_pos[:, i]   # [0,1,2]  [3,4,5]  [6,7,8]
-
     def reward(self):
         UP_AXIS = 2
         # 1. Position
