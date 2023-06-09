@@ -1958,7 +1958,7 @@ class ICCGANHumanoidEE(ICCGANHumanoid):
     GOAL_DIM = (0 + 3) * 2              # (x, y, sp, dist) + (orient + pos) * (ee)
     GOAL_TENSOR_DIM = (0 + 3) * 2
     OB_HORIZON = 2
-    ENABLE_GOAL_TIMER = True
+    ENABLE_GOAL_TIMER = False
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -2064,7 +2064,6 @@ class ICCGANHumanoidEE(ICCGANHumanoid):
         if env_ids is None or len(env_ids) == n_envs:
             root_pos = self.root_pos
             root_orient = self.root_orient
-            # #! 바꿔야됌 -> goal 내가 지정한 direction으로! -> ee_position visualize 다시
             ee_pos, ee_orient = self.link_pos[:, ee_link], self.link_orient[:, ee_link]
 
         else:
@@ -2072,8 +2071,10 @@ class ICCGANHumanoidEE(ICCGANHumanoid):
             root_orient = self.root_orient[env_ids]
             ee_pos, ee_orient = self.link_pos[env_ids][:, ee_link, :], self.link_orient[env_ids][:, ee_link, :]   # [N, L, 3], [N, L, 4]
 
-        head_gpos = ee_pos[:, 0, :]         # [N, 3]
-        head_tan_norm = utils.quat_to_tan_norm(ee_orient[:, 0, :])           # z-axis of head link
+        head_gpos = self.link_pos[:, 0, :]         # [N, 3]
+        head_grot = self.link_orient[:, 0, :]
+        
+        head_tan_norm = utils.quat_to_tan_norm(head_grot)                    # z-axis of head link
         rot_mat = utils.tan_norm_to_rotmat(head_tan_norm)
         head_binorm = torch.nn.functional.normalize(rot_mat[..., 3:6])       # y-axis [num_envs x n_links, 3]
 
