@@ -1991,13 +1991,15 @@ class ICCGANHumanoidEE(ICCGANHumanoid):
 
     def update_viewer(self):
         super().update_viewer()
+        self.gym.clear_lines(self.viewer)
 
         self.visualize_origin()
-        # debugging visualize head, right_hand, left_hand
+        # debugging visualize ee positions
         self.visualize_ee_positions()
-        # self._visualize_target_ee_positions()
         self.visualize_target_ee_tpos()
-        
+        self.visualize_current_local_ee()
+
+
     def visualize_ee_positions(self):
         ee_links = [2, 5, 8]
         hsphere_geom = gymutil.WireframeSphereGeometry(0.04, 16, 16, None, color=(1, 1, 1))   # pink
