@@ -26,6 +26,8 @@ parser.add_argument("--device", type=int, default=0,
     help="ID of the target GPU device for model running.")
 parser.add_argument("--pretrained", type=str, default=None,
     help="Use pretrained checkpoint of discriminator")
+parser.add_argument("--all_models", type=str, default=None,
+    help="Use pretrained checkpoint of all models")
 parser.add_argument("--resume", type=str, default=None,
     help="resume with existing checkpoint")
 settings = parser.parse_args()
@@ -540,6 +542,18 @@ if __name__ == "__main__":
                     pretrained_dict = {k:v for k, v in state_dict["model"].items() if k in discriminator_key}
                     # 3. overwrite entries in the existing state dict
                     model_dict.update(pretrained_dict) 
+                    # 4. load the new state dict
+                    model.load_state_dict(model_dict)
+                    model_dict = model.state_dict()                                             # updated model
+            
+            if settings.all_models:
+                pretrained_ckpt = settings.all_models
+                if os.path.exists(pretrained_ckpt):
+                    print("Load all of PRETRAINED models from {}".format(pretrained_ckpt))
+                    state_dict = torch.load(pretrained_ckpt, map_location=torch.device(settings.device))   # pretrained model
+                    model_dict = model.state_dict()                                                        # current model
+                    # 3. overwrite entries in the existing state dict
+                    model_dict.update(state_dict) 
                     # 4. load the new state dict
                     model.load_state_dict(model_dict)
                     model_dict = model.state_dict()                                             # updated model
