@@ -56,11 +56,15 @@ CRITIC_LR = 1e-4
 GAMMA = 0.95
 GAMMA_LAMBDA = GAMMA * 0.95
 
+THRESHOLD = -0.2
+threshold_conditioned = True
+
 TRAINING_PARAMS = dict(
     max_epochs = 10000,
     save_interval = None,
     terminate_reward = -1
 )
+
 def logger(obs, rews, info):
     buffer = dict(r=[])
     buffer_disc = {
@@ -111,7 +115,20 @@ def logger(obs, rews, info):
         
         else:
             rewards_task = None
-
+        
+        # conditional task rewards (use threshold for discriminator to be trained first)
+        if has_goal_reward and threshold_conditioned:
+            # disc rewards만 떼어오기
+            disc_rewards = rewards[:, range(len(disc_data_raw))]                # [horizon X num_envs, len(disc_data_raw)]
+            # disc rewards 모두 threshold를 넘는값만 clamp하기
+            clamped_rewards = torch.where(disc_rewards > THRESHOLD, disc_rewards, 0)
+            # logical_and을 사용하여 threshold 이상 (즉 0 이상)인 index만 true값으로 반영
+            thres_idx = torch.logical_and(clamped_rewards[:, 0], clamped_rewards[:, 1]).unsqueeze_(-1)
+            
+            # conditional task rewards를 thres_idx == True인 원소들에만 주기
+            conditioned_task_rewards = torch.where(thres_idx == True, rewards_task, 0)
+            rewards[:, -rewards_task.size(-1):] = conditioned_task_rewards
+            
         rewards = rewards.mean(0).cpu().tolist()                                        # [num_reward]
         print("Reward: {}".format("/".join(list(map("{:.4f}".format, rewards)))))
     return rewards
@@ -281,7 +298,7 @@ def train(env, model, ckpt_dir, training_params):
                 terminate = torch.cat(buffer["terminate"])                          # [HORIZON X num_envs]
                 if multi_critics:
                     reward_weights = torch.cat(buffer["reward_weights"])            # [HORIZON, num_envs, reward] -> [num_envs X HORIZON, reward 개수]
-                    rewards = torch.zeros_like(reward_weights)                      # [num_envs X HORIZON, reward 개수]
+                    rewards = torch.zeros_like(reward_weights)                      # [num_envs X HORIZON, reward 개수 -> disc_rew + goal_rew]
                 else:
                     reward_weights = None
                     rewards = None
@@ -305,6 +322,19 @@ def train(env, model, ckpt_dir, training_params):
                     rewards_task = None
                 rewards[terminate] = training_params.terminate_reward
 
+                # conditional rewards (use threshold for discriminator to be trained first)
+                if has_goal_reward and threshold_conditioned:
+                    # disc rewards만 떼어오기
+                    disc_rewards = rewards[:, range(len(disc_data_raw))]                # [horizon X num_envs, len(disc_data_raw)]
+                    # disc rewards 모두 threshold를 넘는값만 clamp하기
+                    clamped_rewards = torch.where(disc_rewards > THRESHOLD, disc_rewards, 0)
+                    # logical_and을 사용하여 threshold 이상 (즉 0 이상)인 index만 true값으로 반영
+                    thres_idx = torch.logical_and(clamped_rewards[:, 0], clamped_rewards[:, 1]).unsqueeze_(-1)
+                    
+                    # conditional task rewards를 thres_idx == True인 원소들에만 주기
+                    conditioned_task_rewards = torch.where(thres_idx == True, rewards_task, 0)
+                    rewards[:, -rewards_task.size(-1):] = conditioned_task_rewards
+                
                 values = torch.cat(buffer["v"])
                 values_ = torch.cat(buffer["v_"])
                 if model.value_normalizer is not None:
@@ -335,7 +365,7 @@ def train(env, model, ckpt_dir, training_params):
                 length = torch.arange(env.ob_horizon, 
                     dtype=ob_seq_lens.dtype, device=ob_seq_lens.device)
                 mask = length.unsqueeze_(0) < ob_seq_lens.unsqueeze(1)
-                states_raw = model.observe(states, norm=False)[0]
+                states_raw = model.observe(states, norm=False)[0]       # [N, states]
                 model.ob_normalizer.update(states_raw[mask])
                 if model.value_normalizer is not None:
                     model.value_normalizer.update(returns)
@@ -347,17 +377,22 @@ def train(env, model, ckpt_dir, training_params):
                     reward_tot = (rewards * reward_weights).sum(-1, keepdims=True).mean(0).item()
                     rewards = rewards.mean(0).cpu().tolist()                                        # [num_envs X 8, num_reward] -> [1, num_reward]
                     if rewards_task is not None:
+                        # use threshold for discriminator to be trained first 
+                        if threshold_conditioned:
+                            rewards_task = conditioned_task_rewards
                         rewards_task = rewards_task.mean(0).cpu().tolist()
 
             n_samples = advantages.size(0)  # [N x HORIZON]
             epoch += 1
+            
+            #! 여기부터 시작해서 하기
             model.train()
             policy_loss, value_loss = [], []
             for _ in range(OPT_EPOCHS): # 5
                 idx = torch.randperm(n_samples)
-                for batch in range(n_samples // BATCH_SIZE):
+                for batch in range(n_samples // BATCH_SIZE):    # BATCH_SIZE = 256
                     sample = idx[BATCH_SIZE * batch: BATCH_SIZE *(batch+1)]
-                    s = states[sample]
+                    s = states[sample]                                              # [BATCH_SIZE, s shape]    
                     a = actions[sample]
                     lp = log_probs[sample]
                     adv = advantages[sample]
@@ -553,7 +588,7 @@ if __name__ == "__main__":
                     state_dict = torch.load(pretrained_ckpt, map_location=torch.device(settings.device))   # pretrained model
                     model_dict = model.state_dict()                                                        # current model
                     # 3. overwrite entries in the existing state dict
-                    model_dict.update(state_dict) 
+                    model_dict.update(state_dict['model']) 
                     # 4. load the new state dict
                     model.load_state_dict(model_dict)
                     model_dict = model.state_dict()                                             # updated model
