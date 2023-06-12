@@ -326,11 +326,15 @@ def train(env, model, ckpt_dir, training_params):
                 if has_goal_reward and threshold_conditioned:
                     # disc rewards만 떼어오기
                     disc_rewards = rewards[:, range(len(disc_data_raw))]                # [horizon X num_envs, len(disc_data_raw)]
-                    # disc rewards 모두 threshold를 넘는값만 clamp하기
-                    clamped_rewards = torch.where(disc_rewards > THRESHOLD, disc_rewards, 0)
-                    # logical_and을 사용하여 threshold 이상 (즉 0 이상)인 index만 true값으로 반영
-                    thres_idx = torch.logical_and(clamped_rewards[:, 0], clamped_rewards[:, 1]).unsqueeze_(-1)
-                    
+                    # disc rewards 모두 threshold를 넘는 값만 clamp하기
+                    clamped_rewards = torch.where(disc_rewards > THRESHOLD, 1, 0)
+                    # upper lower 따로따로 discriminator 존재할 때
+                    if len(disc_data_raw) > 1:
+                        # logical_and을 사용하여 threshold 이상 (즉 0 이상)인 index만 true값으로 반영
+                        thres_idx = torch.logical_and(clamped_rewards[:, 0], clamped_rewards[:, 1]).unsqueeze_(-1)
+                    # full body일 때
+                    else:
+                        thres_idx = clamped_rewards
                     # conditional task rewards를 thres_idx == True인 원소들에만 주기
                     conditioned_task_rewards = torch.where(thres_idx == True, rewards_task, 0)
                     rewards[:, -rewards_task.size(-1):] = conditioned_task_rewards
