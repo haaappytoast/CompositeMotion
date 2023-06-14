@@ -30,6 +30,8 @@ parser.add_argument("--all_models", type=str, default=None,
     help="Use pretrained checkpoint of all models")
 parser.add_argument("--resume", type=str, default=None,
     help="resume with existing checkpoint")
+parser.add_argument("--server", type=str, default=None,
+    help="server docker name")
 settings = parser.parse_args()
 
 os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
@@ -61,7 +63,7 @@ threshold_conditioned = True
 
 TRAINING_PARAMS = dict(
     max_epochs = 10000,
-    save_interval = None,
+    save_interval = 2000,
     terminate_reward = -1
 )
 
@@ -345,9 +347,9 @@ def train(env, model, ckpt_dir, training_params):
                     values = model.value_normalizer(values, unnorm=True)
                     values_ = model.value_normalizer(values_, unnorm=True)
                 values_[terminate] = 0
-                rewards = rewards.view(HORIZON, -1, rewards.size(-1))
-                values = values.view(HORIZON, -1, values.size(-1))
-                values_ = values_.view(HORIZON, -1, values_.size(-1))
+                rewards = rewards.view(HORIZON, -1, rewards.size(-1))       # [HORIZON, num_envs, num_rewards]
+                values = values.view(HORIZON, -1, values.size(-1))          # [HORIZON, num_envs, num_rewards]
+                values_ = values_.view(HORIZON, -1, values_.size(-1))       # [HORIZON, num_envs, num_rewards]
 
                 not_done = buffer["not_done"]
                 advantages = (rewards - values).add_(values_, alpha=GAMMA)
@@ -471,8 +473,10 @@ if __name__ == "__main__":
             import shutil, sys
             os.makedirs(settings.ckpt, exist_ok=True)
             shutil.copy(settings.config, settings.ckpt)
-            with open(os.path.join(settings.ckpt, "command_{}.txt".format(time.time())), "w") as f:
-                f.write(" ".join(sys.argv))
+
+            command_name = time.time() if settings.server == None else settings.server
+            with open(os.path.join(settings.ckpt, "command_{}.txt".format(command_name)), "w") as f:
+                f.write("python " + " ".join(sys.argv))
 
     if os.path.splitext(settings.config)[-1] in [".npy", ".json", ".yaml"]:
         config = object()
