@@ -58,13 +58,15 @@ CRITIC_LR = 1e-4
 GAMMA = 0.95
 GAMMA_LAMBDA = GAMMA * 0.95
 
-THRESHOLD = -0.2
-threshold_conditioned = True
-
 TRAINING_PARAMS = dict(
     max_epochs = 10000,
-    save_interval = 2000,
-    terminate_reward = -1
+    save_interval = None,
+    terminate_reward = -1,
+
+    # params that I added
+    threshold = -0.2,
+    threshold_conditioned = None
+
 )
 
 def logger(obs, rews, info):
@@ -162,6 +164,10 @@ def train(env, model, ckpt_dir, training_params):
         logger = SummaryWriter(ckpt_dir)
     else:
         logger = None
+
+    if training_params.threshold_conditioned:
+        print("THREADHOLD conditioned: ", training_params.threshold)
+        print("----")
 
     optimizer = torch.optim.Adam([
         {"params": model.actor.parameters(), "lr": ACTOR_LR},
@@ -325,11 +331,11 @@ def train(env, model, ckpt_dir, training_params):
                 rewards[terminate] = training_params.terminate_reward
 
                 # conditional rewards (use threshold for discriminator to be trained first)
-                if has_goal_reward and threshold_conditioned:
+                if has_goal_reward and training_params.threshold_conditioned:
                     # disc rewards만 떼어오기
                     disc_rewards = rewards[:, range(len(disc_data_raw))]                # [horizon X num_envs, len(disc_data_raw)]
                     # disc rewards 모두 threshold를 넘는 값만 clamp하기
-                    clamped_rewards = torch.where(disc_rewards > THRESHOLD, 1, 0)
+                    clamped_rewards = torch.where(disc_rewards > training_params.threshold, 1, 0)
                     # upper lower 따로따로 discriminator 존재할 때
                     if len(disc_data_raw) > 1:
                         # logical_and을 사용하여 threshold 이상 (즉 0 이상)인 index만 true값으로 반영
@@ -384,7 +390,7 @@ def train(env, model, ckpt_dir, training_params):
                     rewards = rewards.mean(0).cpu().tolist()                                        # [num_envs X 8, num_reward] -> [1, num_reward]
                     if rewards_task is not None:
                         # use threshold for discriminator to be trained first 
-                        if threshold_conditioned:
+                        if training_params.threshold_conditioned:
                             rewards_task = conditioned_task_rewards
                         rewards_task = rewards_task.mean(0).cpu().tolist()
 
