@@ -443,6 +443,10 @@ def train(env, model, ckpt_dir, training_params):
                 if rewards_task is not None: 
                     for i in range(len(rewards_task)):
                         logger.add_scalar("train/task_reward_{}".format(i), rewards_task[i], epoch)
+                # discriminator loss
+                    for i in range(len(rewards)-len(rewards_task)):
+                        logger.add_scalar("train/disc_reward_{}".format(i), rewards[i], epoch)
+
             for v in real_losses.values(): v.clear()
             for v in fake_losses.values(): v.clear()
             
