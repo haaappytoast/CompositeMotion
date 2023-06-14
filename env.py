@@ -2183,7 +2183,7 @@ class ICCGANHumanoidEE(ICCGANHumanoid):
         pos_diff = torch.linalg.norm(target_ee_pos_tensor.sub(current_ee_lpos), ord=2, dim=-1)  # [N]
         count = 2
         pos_e = pos_diff.sum(-1, keepdim=True).div(count)
-        aiming_rew = (pos_e.mul_(-2).exp_())                              # [N, 1]
+        aiming_rew = (pos_e.mul_(-4).exp_())                              # [N, 1]
         r = aiming_rew
         return r
 
