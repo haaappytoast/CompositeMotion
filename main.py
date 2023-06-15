@@ -64,8 +64,8 @@ TRAINING_PARAMS = dict(
     terminate_reward = -1,
 
     # params that I added
-    threshold = -0.2,
-    threshold_conditioned = None
+    threshold = None,
+    threshold_conditioned = False
 
 )
 
@@ -190,6 +190,8 @@ def train(env, model, ckpt_dir, training_params):
     buffer_disc = {
         name: dict(fake=[], real=[], seq_len=[]) for name in env.discriminators.keys()  # Dict[str, DiscriminatorConfig]
     }
+    # real_losses {'disc_1': [], 'disc_2': []}
+    # fake_losses {'disc_1': [], 'disc_2': []}
     real_losses, fake_losses = {n:[] for n in buffer_disc.keys()}, {n:[] for n in buffer_disc.keys()}   # names in discriminators of config files
     
     epoch = 0
@@ -253,12 +255,16 @@ def train(env, model, ckpt_dir, training_params):
                     ref = disc.ob_normalizer(real)                  # [N * HORIZON, 2/5, 56/49]
                     disc_data_training.append((name, disc, ref, ob, end_frame))     # len: 2
 
-            #! discriminator training part
-            #! freeze parameters related to discriminators
-            for i, (name, param) in enumerate(model.named_parameters()):
-                if 'discriminators' in name:
-                    param.requires_grad = False
-            # model.train()
+            ## discriminator training part
+            # freeze parameters related to discriminators
+            if settings.pretrained:
+                for i, (name, param) in enumerate(model.named_parameters()):
+                    if 'discriminators' in name:
+                        param.requires_grad = False
+                model.eval()
+            else:
+                model.train()
+            
             n_samples = 0
             for name, disc, ref, ob, seq_end_frame_ in disc_data_training:
                 real_loss = real_losses[name]
