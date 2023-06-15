@@ -9,8 +9,12 @@ env_params = dict(
 
 training_params = dict(
     max_epochs = 100000,
-    save_interval = 10000,
-    terminate_reward = -25
+    save_interval = 2000,
+    terminate_reward = -25,
+
+    # params that I added
+    threshold = 0.1,
+    threshold_conditioned = False
 )
 
 discriminators = {
