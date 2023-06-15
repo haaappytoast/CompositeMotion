@@ -2,7 +2,7 @@ import numpy as np
 
 env_cls = "ICCGANHumanoidEE"
 env_params = dict(
-    episode_length = 500,
+    episode_length = 300,
     motion_file = "assets/motions/gym/chest_open+walk_in_place.json",
     goal_reward_weight = [0.5],
 )
@@ -10,7 +10,7 @@ env_params = dict(
 training_params = dict(
     max_epochs = 100000,
     save_interval = 2000,
-    terminate_reward = -25,
+    terminate_reward = -1,
 
     # params that I added
     threshold = 0.1,

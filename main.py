@@ -334,7 +334,6 @@ def train(env, model, ckpt_dir, training_params):
                         rewards[:, -rewards_task.size(-1):] = rewards_task          # 마지막 reward 들 (개수만큼)
                 else:
                     rewards_task = None
-                rewards[terminate] = training_params.terminate_reward
 
                 # conditional rewards (use threshold for discriminator to be trained first)
                 if has_goal_reward and training_params.threshold_conditioned:
@@ -353,6 +352,8 @@ def train(env, model, ckpt_dir, training_params):
                     conditioned_task_rewards = torch.where(thres_idx == True, rewards_task, 0)
                     rewards[:, -rewards_task.size(-1):] = conditioned_task_rewards
                 
+                rewards[terminate] = training_params.terminate_reward
+
                 values = torch.cat(buffer["v"])
                 values_ = torch.cat(buffer["v_"])
                 if model.value_normalizer is not None:
@@ -457,7 +458,7 @@ def train(env, model, ckpt_dir, training_params):
                         logger.add_scalar("train/task_reward_{}".format(i), rewards_task[i], epoch)
                 # discriminator loss
                     for i in range(len(rewards)-len(rewards_task)):
-                        logger.add_scalar("train/disc_reward_{}".format(i), rewards[i], epoch)
+                        logger.add_scalar("train/reward_disc_{}".format(i), rewards[i], epoch)
 
             for v in real_losses.values(): v.clear()
             for v in fake_losses.values(): v.clear()
