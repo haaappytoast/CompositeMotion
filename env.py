@@ -704,14 +704,6 @@ class ICCGANHumanoid(Env):
 
         pass
 
-    def _visualize_axis_utils(self, gpos, gquat):
-        pose = gymapi.Transform()
-        pose.p = gymapi.Vec3(gpos[..., 0], gpos[..., 1], gpos[..., 2])
-        pose.r = gymapi.Quat(gquat[..., 0], gquat[..., 1], gquat[..., 2], gquat[..., 3])
-        for i in range(len(self.envs)):
-            axes_geom = gymutil.AxesGeometry(1)
-            gymutil.draw_lines(axes_geom, self.gym, self.viewer, self.envs[i], pose)
-
     def visualize_axis(self, gpos, gquat):
         gquat = gquat.view(-1, 4).cpu()                                                 # [num_envs x n_links, 4]
         tan_norm = utils.quat_to_tan_norm(gquat).cpu()
@@ -924,7 +916,6 @@ class ICCGANHumanoidTarget(ICCGANHumanoid):
             self.gym.add_lines(self.viewer, e, n_lines, l, [[0., 0., 1.] for _ in range(n_lines)])
 
         # self.visualize_axis(self.link_pos[:, [0], :], self.link_orient[:, [0], :])
-        # self._visualize_axis_utils(self.link_pos[:, [0], :], self.link_orient[:, [0], :])
         self.visualize_origin()
 
     def _observe(self, env_ids):
@@ -2087,21 +2078,25 @@ class ICCGANHumanoidEE(ICCGANHumanoid):
             root_pos = self.root_pos
             root_orient = self.root_orient
             ee_pos, ee_orient = self.link_pos[:, ee_link], self.link_orient[:, ee_link]
-            head_gpos = self.link_pos[:, 0, :]         # [N, 3]
-            head_grot = self.link_orient[:, 0, :]
+
+            head_gpos = self.link_pos[:, 2, :]         # [N, 3]
+            root_grot = self.link_orient[:, 0, :]
         else:
             root_pos = self.root_pos[env_ids]
             root_orient = self.root_orient[env_ids]
             ee_pos, ee_orient = self.link_pos[env_ids][:, ee_link, :], self.link_orient[env_ids][:, ee_link, :]   # [N, L, 3], [N, L, 4]
-            head_gpos = self.link_pos[env_ids][:, 0, :]         # [N, 3]
-            head_grot = self.link_orient[env_ids][:, 0, :]
-        head_tan_norm = utils.quat_to_tan_norm(head_grot)                    # z-axis of head link
+            head_gpos = self.link_pos[env_ids][:, 2, :]         # [N, 3]
+            root_grot = self.link_orient[env_ids][:, 0, :]
+        head_tan_norm = utils.quat_to_tan_norm(root_grot)                    # z-axis of head link
         rot_mat = utils.tan_norm_to_rotmat(head_tan_norm)
         head_binorm = torch.nn.functional.normalize(rot_mat[..., 3:6])       # y-axis [num_envs x n_links, 3]
         rarm_offset, larm_offset = self.rarm_len.item(), self.larm_len.item()
         target_head_pos = head_gpos
         target_rhand_pos = head_gpos + rarm_offset * (-head_binorm)               # [n_envs, 3]
         target_lhand_pos = head_gpos + larm_offset * head_binorm
+
+        self.target_rhand_pos = target_rhand_pos
+        self.target_lhand_pos = target_lhand_pos
         target_tensor = torch.cat([target_rhand_pos, target_lhand_pos], dim=-1).view(len(env_ids), -1, 3)  # [n_envs, n_links, 3]
         origin = root_pos.clone()
         origin[..., UP_AXIS] = 0
@@ -2153,10 +2148,10 @@ class ICCGANHumanoidEE(ICCGANHumanoid):
         self.current_ee_lpos = current_ee_lpos
 
         # ##! erase later
-        # head_gpos =  self.link_pos[:, 0, :]         # [N, 3]
-        # head_grot = self.link_orient[:, 0, :]
-        # head_tan_norm = utils.quat_to_tan_norm(head_grot)           # z-axis of head link
-        # rot_mat = utils.tan_norm_to_rotmat(head_tan_norm)
+        # head_gpos =  self.link_pos[:, 2, :]                         # [N, 3]
+        # root_grot = self.link_orient[:, 0, :]
+        # root_tan_norm = utils.quat_to_tan_norm(root_grot)           # z-axis of head link
+        # rot_mat = utils.tan_norm_to_rotmat(root_tan_norm)
         # head_binorm = torch.nn.functional.normalize(rot_mat[..., 3:6])       # y-axis [num_envs x n_links, 3]
 
         # # get_link_len
