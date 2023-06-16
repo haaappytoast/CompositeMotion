@@ -18,7 +18,7 @@ env_params = dict(
 
 training_params = dict(
     max_epochs = 100000,
-    save_interval = 10000,
+    save_interval = 2000,
     terminate_reward = -25
 )
 
