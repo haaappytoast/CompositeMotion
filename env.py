@@ -505,21 +505,20 @@ class ICCGANHumanoid(Env):
                 local_pos = config.local_pos,
                 local_height = config.local_height,
                 replay_speed = config.replay_speed,
-                ob_horizon = config.ob_horizon,
+                ob_horizon = config.ob_horizon,             # if there is no ob_horizon in config -> self.OB_HORIZON 
                 id=i
             )
             if self.reward_weights is not None:
                 self.reward_weights[:, i] = config.weight
             max_ob_horizon = max(max_ob_horizon, config.ob_horizon)
 
-        if max_ob_horizon != self.state_hist.size(0):
+        if max_ob_horizon != self.state_hist.size(0):       # self.state_hist size: [max_ob_horizon, NUM_ENVS, 208] #! why 208?
             self.state_hist = torch.empty((max_ob_horizon, *self.state_hist.shape[1:]),
                 dtype=self.root_tensor.dtype, device=self.device)
         self.disc_ref_motion = [
             (ref_motion, replay_speed, max_ob_horizon, [self.discriminators[id] for id in disc_ids])
             for (ref_motion, replay_speed), (max_ob_horizon, disc_ids) in disc_ref_motion.items()
         ]
-
         if self.rew_dim > 0:
             if self.rew_dim > 1:
                 self.reward_weights *= (1-reward_weights.sum(dim=-1, keepdim=True))
@@ -527,8 +526,8 @@ class ICCGANHumanoid(Env):
                 self.reward_weights *= (1-reward_weights)
             self.reward_weights[:, -self.rew_dim:] = reward_weights
             
-        self.info["ob_seq_lens"] = torch.zeros_like(self.lifetime)  # dummy result
-        self.info["disc_obs"] = self.observe_disc(self.state_hist)  # dummy result
+        self.info["ob_seq_lens"] = torch.zeros_like(self.lifetime)  # dummy result  # SIZE: [NUM_ENVS]
+        self.info["disc_obs"] = self.observe_disc(self.state_hist)  # dummy result  # SIZE: [max_ob_horizon, NUM_ENVS, 208]
         self.info["disc_obs_expert"] = self.info["disc_obs"]        # dummy result
         self.goal_dim = self.GOAL_DIM
         self.state_dim = (self.ob_dim-self.goal_dim)//self.ob_horizon
