@@ -1947,7 +1947,6 @@ class ICCGANHumanoidEE(ICCGANHumanoid):
     GOAL_REWARD_WEIGHT = 0.5
     GOAL_DIM = (0 + 3) * 2              # (x, y, sp, dist) + (orient + pos) * (ee)
     GOAL_TENSOR_DIM = (0 + 3) * 2
-    OB_HORIZON = 2
     ENABLE_GOAL_TIMER = False
 
     def __init__(self, *args, **kwargs):
