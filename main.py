@@ -273,8 +273,8 @@ def train(env, model, ckpt_dir, training_params):
                 if len(ref) != n_samples:                   # [N * HORIZON]
                     n_samples = len(ref)
                     idx = torch.randperm(n_samples)         # 0 ~ n_samples 사이 난수 순열 생성
-                for batch in range(n_samples//BATCH_SIZE):
-                    sample = idx[batch*BATCH_SIZE:(batch+1)*BATCH_SIZE]
+                for batch in range(n_samples//BATCH_SIZE):  # [N * HORIZON] / BATCH_SIZE
+                    sample = idx[batch*BATCH_SIZE:(batch+1)*BATCH_SIZE] # BATCH_SIZE만큼의 real, fake 가져오기
                     r = ref[sample]
                     f = ob[sample]
                     seq_end_frame = seq_end_frame_[sample]
