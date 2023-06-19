@@ -121,11 +121,11 @@ def logger(obs, rews, info):
             rewards_task = None
         
         # conditional task rewards (use threshold for discriminator to be trained first)
-        if has_goal_reward and threshold_conditioned:
+        if has_goal_reward and TRAINING_PARAMS['threshold_conditioned']:
             # disc rewards만 떼어오기
             disc_rewards = rewards[:, range(len(disc_data_raw))]                # [horizon X num_envs, len(disc_data_raw)]
             # disc rewards 모두 threshold를 넘는값만 clamp하기
-            clamped_rewards = torch.where(disc_rewards > THRESHOLD, disc_rewards, 0)
+            clamped_rewards = torch.where(disc_rewards > TRAINING_PARAMS.threshold, disc_rewards, 0)
             # logical_and을 사용하여 threshold 이상 (즉 0 이상)인 index만 true값으로 반영
             thres_idx = torch.logical_and(clamped_rewards[:, 0], clamped_rewards[:, 1]).unsqueeze_(-1)
             
